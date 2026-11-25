@@ -31,6 +31,7 @@ object WavCodec {
     fun decodeStreamToPcm16File(
         input: InputStream,
         outPcmFile: File,
+        onPcmChunk: (sampleRate: Int, channels: Int, pcmBytes: ByteArray, byteLen: Int) -> Unit = { _, _, _, _ -> },
         onProgress: (Long) -> Unit = {},
     ): Pair<WavHeader, AudioMetadata> {
         val riff = ByteArray(12)
@@ -89,7 +90,10 @@ object WavCodec {
                         dataSize = size,
                         audioFormat = audioFormat,
                         bitsPerSample = bitsPerSample,
+                        sampleRate = sampleRate,
+                        channels = channels,
                         outPcmFile = outPcmFile,
+                        onPcmChunk = onPcmChunk,
                         onProgress = onProgress,
                     )
                     if (size % 2L == 1L) skipExact(input, 1)
@@ -190,16 +194,19 @@ object WavCodec {
         dataSize: Long,
         audioFormat: Int,
         bitsPerSample: Int,
+        sampleRate: Int,
+        channels: Int,
         outPcmFile: File,
+        onPcmChunk: (sampleRate: Int, channels: Int, pcmBytes: ByteArray, byteLen: Int) -> Unit,
         onProgress: (Long) -> Unit,
     ) {
         val bytesPerSample = (bitsPerSample / 8).coerceIn(1, 4)
-        val rawBuf = ByteArray(16384 - (16384 % bytesPerSample))
-        val outBuf = ByteArray(16384 * 2)
+        val rawBuf = ByteArray(65536 - (65536 % bytesPerSample))
+        val outBuf = ByteArray((rawBuf.size / bytesPerSample) * 2)
         var remaining = dataSize
         var totalSamplesWritten = 0L
 
-        BufferedOutputStream(FileOutputStream(outPcmFile)).use { out ->
+        BufferedOutputStream(FileOutputStream(outPcmFile), 262144).use { out ->
             while (remaining > 0L) {
                 val toRead = min(rawBuf.size.toLong(), remaining).toInt()
                 val read = input.read(rawBuf, 0, toRead)
@@ -239,7 +246,11 @@ object WavCodec {
                     outBuf[i * 2] = (v and 0xFF).toByte()
                     outBuf[i * 2 + 1] = ((v ushr 8) and 0xFF).toByte()
                 }
-                out.write(outBuf, 0, samples * 2)
+                val byteLen = samples * 2
+                out.write(outBuf, 0, byteLen)
+                if (byteLen > 0) {
+                    onPcmChunk(sampleRate, channels, outBuf, byteLen)
+                }
                 remaining -= read
                 totalSamplesWritten += samples
                 onProgress(totalSamplesWritten)

@@ -80,6 +80,7 @@ data class DownloadUiState(
     val engineUpdateError: String? = null,
     val isFetchingPreview: Boolean = false,
     val preview: MediaTrackPreview? = null,
+    val previewThumbnailPath: String? = null,
     val isRunning: Boolean = false,
     val progress: Float = 0f,
     val etaSeconds: Long = -1L,
@@ -226,6 +227,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 url = url,
                 errorDiagnostic = null,
                 preview = if (urlChanged) null else st.preview,
+                previewThumbnailPath = if (urlChanged) null else st.previewThumbnailPath,
                 selectedFormatId = if (urlChanged) null else st.selectedFormatId,
             )
         }
@@ -302,7 +304,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setAllowPlaylist(enabled: Boolean) {
-        _state.update { it.copy(allowPlaylist = enabled, preview = null) }
+        _state.update { it.copy(allowPlaylist = enabled, preview = null, previewThumbnailPath = null) }
         viewModelScope.launch { prefsRepo.setYtdlpAllowPlaylist(enabled) }
     }
 
@@ -500,6 +502,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 it.copy(
                     isFetchingPreview = true,
                     preview = null,
+                    previewThumbnailPath = null,
                     selectedFormatId = null,
                     errorDiagnostic = null,
                 )
@@ -517,6 +520,13 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                         preview = info,
                         engineStatus = status ?: it.engineStatus,
                     )
+                }
+                val thumbUrl = info.thumbnailUrl
+                if (!thumbUrl.isNullOrBlank()) {
+                    val thumbFile = runCatching { downloader.fetchPreviewThumbnail(ctx, thumbUrl) }.getOrNull()
+                    if (thumbFile != null && _state.value.preview?.webpageUrl == info.webpageUrl) {
+                        _state.update { it.copy(previewThumbnailPath = thumbFile.absolutePath) }
+                    }
                 }
             } catch (ce: CancellationException) {
                 _state.update { it.copy(isFetchingPreview = false) }

@@ -409,8 +409,16 @@ internal object MediaCodecEncoders {
             if (muxerStarted) {
                 muxer.stop()
             }
+            runCatching { muxer.release() }
             val counting = CountingStream(outputStream)
-            FileInputStream(tempM4a).use { it.copyTo(counting, 32768) }
+            val wroteTagged = if (!config.metadata.isEmpty) {
+                com.libreopus.dsp.container.Mp4MetadataWriter.writeMetadata(tempM4a, config.metadata, counting)
+            } else {
+                false
+            }
+            if (!wroteTagged) {
+                FileInputStream(tempM4a).use { it.copyTo(counting, 262144) }
+            }
             counting.flush()
             onProgress(1f)
             val durMs = if (adapted.sampleRate > 0) (adapted.totalFrames * 1000L) / adapted.sampleRate else 0L

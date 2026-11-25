@@ -7,11 +7,20 @@ import android.graphics.BitmapFactory
 import androidx.core.content.edit
 import com.libreopus.app.R
 import com.libreopus.audio.api.AudioMetadata
+import com.libreopus.dsp.container.FlacMetadataCodec
+import com.libreopus.dsp.container.LosslessOpusEditor
+import com.libreopus.dsp.container.Mp4MetadataWriter
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import java.io.BufferedOutputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
 import java.util.Collections
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -143,6 +152,7 @@ object PlatformDownloader {
 
             fun buildPreviewReq(opts: DownloadExecutionOptions): YoutubeDLRequest = YoutubeDLRequest(firstUrl).apply {
                 addOption("-J")
+                addOption("--no-warnings")
                 if (opts.allowPlaylist) {
                     addOption("--flat-playlist")
                 } else {
@@ -278,7 +288,7 @@ object PlatformDownloader {
                     if (activeProcessId == procId) activeProcessId = null
                 }
 
-                val artifact = collectArtifact(workDir, urls, url, preset)
+                val artifact = collectArtifact(appCtx, workDir, urls, url, preset)
                 if (artifact.mediaItems.isEmpty() && artifact.imageFile == null && artifact.subtitleFiles.isEmpty()) {
                     throw YoutubeDLException("No downloadable media output produced by yt-dlp.")
                 }
@@ -336,6 +346,107 @@ object PlatformDownloader {
             }
         }
 
+        override suspend fun fetchPreviewThumbnail(
+            context: Context,
+            thumbnailUrl: String,
+        ): File? = withContext(Dispatchers.IO) {
+            fetchOrCacheThumbnail(context.applicationContext, thumbnailUrl)
+        }
+
+        private fun fetchOrCacheThumbnail(context: Context, rawUrl: String?): File? {
+            val cleanUrl = rawUrl?.trim().orEmpty()
+            if (!cleanUrl.startsWith("https://", ignoreCase = true) && !cleanUrl.startsWith("http://", ignoreCase = true)) {
+                return null
+            }
+            val thumbDir = File(context.cacheDir, "ytdlp_thumbs").apply { mkdirs() }
+            val key = sha256HexPrefix(cleanUrl)
+            val cached = File(thumbDir, "$key.jpg")
+            if (cached.exists() && cached.isFile && cached.length() > 512L) {
+                return cached
+            }
+            return runCatching {
+                val rawBytes = downloadImageBytes(cleanUrl) ?: return null
+                val jpegBytes = normalizeBytesToJpeg(rawBytes, maxEdgePx = 1280) ?: return null
+                val tmp = File(thumbDir, "$key.tmp")
+                FileOutputStream(tmp).use { it.write(jpegBytes) }
+                if (!tmp.renameTo(cached)) {
+                    cached.writeBytes(jpegBytes)
+                    tmp.delete()
+                }
+                if (cached.exists() && cached.length() > 0L) cached else null
+            }.getOrNull()
+        }
+
+        private fun downloadImageBytes(urlStr: String, maxBytes: Int = 6 * 1024 * 1024): ByteArray? {
+            var currentUrl = urlStr
+            repeat(3) {
+                val conn = (URL(currentUrl).openConnection() as? HttpURLConnection) ?: return null
+                try {
+                    conn.instanceFollowRedirects = true
+                    conn.connectTimeout = 8000
+                    conn.readTimeout = 8000
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36")
+                    val code = conn.responseCode
+                    if (code in 300..399) {
+                        val loc = conn.getHeaderField("Location")?.takeIf { it.isNotBlank() } ?: return null
+                        currentUrl = URL(URL(currentUrl), loc).toString()
+                        return@repeat
+                    }
+                    if (code !in 200..299) return null
+                    conn.inputStream.use { input ->
+                        val out = ByteArrayOutputStream()
+                        val buf = ByteArray(16384)
+                        var total = 0
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            total += n
+                            if (total > maxBytes) return null
+                            out.write(buf, 0, n)
+                        }
+                        return out.toByteArray()
+                    }
+                } finally {
+                    conn.disconnect()
+                }
+            }
+            return null
+        }
+
+        private fun normalizeBytesToJpeg(rawBytes: ByteArray, maxEdgePx: Int): ByteArray? {
+            if (rawBytes.isEmpty()) return null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, bounds)
+            val w = bounds.outWidth
+            val h = bounds.outHeight
+            if (w <= 0 || h <= 0) return null
+            var sampleSize = 1
+            var longest = maxOf(w, h)
+            while (longest / sampleSize > maxEdgePx) {
+                sampleSize *= 2
+            }
+            val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val bmp = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, opts) ?: return null
+            return try {
+                val out = ByteArrayOutputStream()
+                bmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                out.toByteArray().takeIf { it.isNotEmpty() }
+            } finally {
+                bmp.recycle()
+            }
+        }
+
+        private fun sha256HexPrefix(text: String): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
+            return buildString(24) {
+                for (i in 0 until 12) {
+                    val b = digest[i].toInt() and 0xFF
+                    append(((b ushr 4) and 0xF).toString(16))
+                    append((b and 0xF).toString(16))
+                }
+            }
+        }
+
         private fun cleanPartialFiles(workDir: File) {
             workDir.listFiles()?.forEach { f ->
                 if (f.isFile && (f.name.endsWith(".part") || f.name.endsWith(".ytdl") || f.length() == 0L)) {
@@ -369,6 +480,7 @@ object PlatformDownloader {
         }
 
         private fun collectArtifact(
+            appCtx: Context,
             workDir: File,
             urls: List<String>,
             rawUrl: String,
@@ -381,12 +493,40 @@ object PlatformDownloader {
             val imageExts = setOf("jpg", "jpeg", "png", "webp")
             val subtitleExts = setOf("vtt", "srt", "lrc", "ass")
 
-            val infoJsonMap = files
+            val infoJsonDetailsMap = files
                 .filter { it.name.endsWith(".info.json", ignoreCase = true) }
-                .associateBy { it.name.removeSuffix(".info.json") }
+                .associate { jf ->
+                    val details = runCatching { InfoJsonMetadataParser.parseDetails(jf.readText(Charsets.UTF_8)) }.getOrNull()
+                    jf.name.removeSuffix(".info.json") to details
+                }
 
-            val fallbackMeta: AudioMetadata? = infoJsonMap.values.firstOrNull()?.let { jf ->
-                runCatching { InfoJsonMetadataParser.parse(jf.readText(Charsets.UTF_8)) }.getOrNull()
+            val fallbackDetails = infoJsonDetailsMap.values.firstOrNull { it != null }
+            val rawImages = files
+                .filter { it.extension.lowercase() in imageExts }
+                .sortedByDescending { it.length() }
+            val normalizedImages = rawImages.map { normalizeImageForAndroidAndTags(it) }.distinctBy { it.absolutePath }
+
+            val coverFile: File? = normalizedImages.firstOrNull() ?: run {
+                val cachedThumb = fetchOrCacheThumbnail(appCtx, fallbackDetails?.thumbnailUrl)
+                if (cachedThumb != null && cachedThumb.exists()) {
+                    val localCover = File(workDir, "cover_thumb.jpg")
+                    runCatching {
+                        cachedThumb.copyTo(localCover, overwrite = true)
+                        localCover
+                    }.getOrNull()
+                } else {
+                    null
+                }
+            }
+
+            val imageMime = when (coverFile?.extension?.lowercase()) {
+                "png" -> "image/png"
+                "webp" -> "image/webp"
+                "jpg", "jpeg" -> "image/jpeg"
+                else -> null
+            }
+            val coverBytes = coverFile?.takeIf { it.exists() && it.length() in 1L..4_000_000L }?.let { cf ->
+                runCatching { cf.readBytes() }.getOrNull()
             }
 
             val mediaFiles = files
@@ -399,46 +539,103 @@ object PlatformDownloader {
                     (ext == "webm" && preset == DownloadPreset.VIDEO_MUXED)
                 val mime = mimeForExtension(ext, isVideo)
                 val base = mediaFile.nameWithoutExtension
-                val matchedJson = infoJsonMap[base]
-                val itemMeta = matchedJson?.let { jf ->
-                    runCatching { InfoJsonMetadataParser.parse(jf.readText(Charsets.UTF_8)) }.getOrNull()
-                } ?: fallbackMeta
+                val itemDetails = infoJsonDetailsMap[base] ?: fallbackDetails
+                val baseMeta = itemDetails?.metadata
+                val itemThumbFile = if (itemDetails?.thumbnailUrl != null &&
+                    itemDetails.thumbnailUrl != fallbackDetails?.thumbnailUrl
+                ) {
+                    fetchOrCacheThumbnail(appCtx, itemDetails.thumbnailUrl)
+                } else {
+                    null
+                }
+                val itemCoverBytes = itemThumbFile?.takeIf { it.exists() && it.length() in 1L..4_000_000L }
+                    ?.let { runCatching { it.readBytes() }.getOrNull() } ?: coverBytes
+                val itemCoverMime = if (itemThumbFile != null) "image/jpeg" else (imageMime ?: "image/jpeg")
+
+                val finalMeta = if (baseMeta != null || itemCoverBytes != null) {
+                    val m = baseMeta ?: AudioMetadata(title = mediaFile.nameWithoutExtension)
+                    if (itemCoverBytes != null) {
+                        m.copy(coverArtBytes = itemCoverBytes, coverArtMimeType = itemCoverMime)
+                    } else {
+                        m
+                    }
+                } else {
+                    null
+                }
+
+                if (finalMeta != null && !finalMeta.isEmpty) {
+                    embedMetadataIntoDownloadedFile(mediaFile, workDir, finalMeta)
+                }
+
                 DownloadedMediaItem(
                     file = mediaFile,
                     displayName = mediaFile.name,
                     isVideo = isVideo,
                     mimeType = mime,
-                    metadata = itemMeta,
+                    metadata = finalMeta,
+                    durationSec = itemDetails?.durationSec ?: 0,
+                    formatLabel = itemDetails?.formatLabel?.ifBlank { ext.uppercase() } ?: ext.uppercase(),
                 )
-            }
-
-            val rawImages = files
-                .filter { it.extension.lowercase() in imageExts }
-                .sortedByDescending { it.length() }
-            val normalizedImages = rawImages.map { normalizeImageForAndroidAndTags(it) }.distinctBy { it.absolutePath }
-            val primaryImage = normalizedImages.firstOrNull()
-            val imageMime = when (primaryImage?.extension?.lowercase()) {
-                "png" -> "image/png"
-                "webp" -> "image/webp"
-                "jpg", "jpeg" -> "image/jpeg"
-                else -> null
             }
 
             val subtitleFiles = files.filter { it.extension.lowercase() in subtitleExts }
             val primaryMedia = mediaItems.firstOrNull()
+            val saveToPictures = preset == DownloadPreset.IMAGE_ONLY ||
+                preset == DownloadPreset.AUDIO_AND_IMAGE ||
+                (normalizedImages.isNotEmpty() && preset == DownloadPreset.CUSTOM_SCRIPT)
 
             return DownloadedArtifact(
                 audioFile = primaryMedia?.file,
                 audioDisplayName = primaryMedia?.displayName,
-                imageFile = primaryImage,
-                imageDisplayName = primaryImage?.name,
+                imageFile = coverFile,
+                imageDisplayName = coverFile?.name,
                 imageMimeType = imageMime,
-                metadata = primaryMedia?.metadata ?: fallbackMeta,
+                saveCoverToPictures = saveToPictures,
+                metadata = primaryMedia?.metadata ?: fallbackDetails?.metadata,
                 sourceUrl = urls.firstOrNull() ?: rawUrl.trim(),
                 mediaItems = mediaItems,
-                imageFiles = normalizedImages,
+                imageFiles = if (normalizedImages.isNotEmpty()) normalizedImages else listOfNotNull(coverFile),
                 subtitleFiles = subtitleFiles,
             )
+        }
+
+        private fun embedMetadataIntoDownloadedFile(
+            mediaFile: File,
+            workDir: File,
+            metadata: AudioMetadata,
+        ) {
+            val header = ByteArray(12)
+            val read = runCatching { FileInputStream(mediaFile).use { it.read(header) } }.getOrDefault(0)
+            if (read < 8) return
+            val sig4 = String(header, 0, 4, Charsets.US_ASCII)
+            val isOgg = sig4 == "OggS"
+            val isFlac = sig4 == "fLaC"
+            val isMp4 = String(header, 4, 4, Charsets.US_ASCII) == "ftyp"
+            if (!isOgg && !isFlac && !isMp4) return
+
+            val tmpFile = File(workDir, "${mediaFile.name}.tagged.tmp")
+            val ok = try {
+                val wrote = BufferedOutputStream(FileOutputStream(tmpFile), 262144).use { out ->
+                    when {
+                        isOgg -> LosslessOpusEditor.rewriteTagsLossless(mediaFile, metadata, out)
+                        isFlac -> FlacMetadataCodec.rewriteMetadata(mediaFile, metadata, out)
+                        isMp4 -> Mp4MetadataWriter.writeMetadata(mediaFile, metadata, out)
+                        else -> false
+                    }
+                }
+                wrote && tmpFile.exists() && tmpFile.length() >= 64L &&
+                    (!isMp4 || Mp4MetadataWriter.readMetadata(tmpFile) != null)
+            } catch (_: Exception) {
+                false
+            }
+            if (ok) {
+                if (!tmpFile.renameTo(mediaFile)) {
+                    runCatching { tmpFile.copyTo(mediaFile, overwrite = true) }
+                    tmpFile.delete()
+                }
+            } else {
+                tmpFile.delete()
+            }
         }
 
         private fun mimeForExtension(ext: String, isVideo: Boolean): String = when (ext) {

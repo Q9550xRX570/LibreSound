@@ -9,7 +9,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -46,7 +48,9 @@ import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Share
@@ -87,6 +91,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -94,6 +99,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -103,6 +109,7 @@ import com.libreopus.app.downloader.AudioFormatPreference
 import com.libreopus.app.downloader.DownloadPreset
 import com.libreopus.app.downloader.FilenameTemplate
 import com.libreopus.app.downloader.MediaFormatOption
+import com.libreopus.app.downloader.PlatformCookieWebLogin
 import com.libreopus.app.downloader.PresetCommandBuilder
 import com.libreopus.app.downloader.YoutubeClientMode
 import com.libreopus.app.downloader.YtDlpErrorDiagnostic
@@ -112,6 +119,19 @@ import com.libreopus.app.viewmodel.DownloadViewModel
 import com.libreopus.audio.api.AudioMetadata
 import java.io.File
 import kotlinx.coroutines.launch
+
+private data class MediaPropertiesPayload(
+    val title: String,
+    val coverPath: String? = null,
+    val artist: String = "",
+    val album: String = "",
+    val year: String = "",
+    val durationSec: Int = 0,
+    val formatLabel: String = "",
+    val sizeBytes: Long = 0L,
+    val savedPath: String = "",
+    val sourceUrl: String = "",
+)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -136,6 +156,7 @@ fun DownloadScreen(
     var showFormatSheet by remember { mutableStateOf(false) }
     var showSaveTemplateDialog by remember { mutableStateOf(false) }
     var showErrorDetails by remember { mutableStateOf(false) }
+    var activeProperties by remember { mutableStateOf<MediaPropertiesPayload?>(null) }
     var askedNotifPermission by remember { mutableStateOf(false) }
 
     val notifPermissionLauncher = rememberLauncherForActivityResult(
@@ -262,10 +283,16 @@ fun DownloadScreen(
             }
         }
 
-        // Preview + Format Picker / Playlist Preview Card
+        // Preview + Format Picker / Playlist Preview Card (YTDLnis style with cover & properties)
         val preview = state.preview
         if (preview != null) {
             item {
+                val thumbPath = state.previewThumbnailPath
+                val thumbBmp = remember(thumbPath) {
+                    thumbPath?.let { p ->
+                        runCatching { BitmapFactory.decodeFile(p)?.asImageBitmap() }.getOrNull()
+                    }
+                }
                 OutlinedCard(
                     colors = CardDefaults.outlinedCardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -274,34 +301,137 @@ fun DownloadScreen(
                 ) {
                     Column(
                         modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(186.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        ) {
+                            if (thumbBmp != null) {
+                                Image(
+                                    bitmap = thumbBmp,
+                                    contentDescription = preview.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (preview.isPlaylist) {
+                                        Icons.AutoMirrored.Rounded.PlaylistPlay
+                                    } else {
+                                        Icons.Rounded.AudioFile
+                                    },
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .align(Alignment.Center),
+                                )
+                            }
+
+                            preview.extractor?.takeIf { it.isNotBlank() }?.let { extName ->
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color.Black.copy(alpha = 0.72f),
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(8.dp),
+                                ) {
+                                    Text(
+                                        text = extName,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    )
+                                }
+                            }
+
+                            val rightBadge = when {
+                                preview.isPlaylist -> stringResource(R.string.playlist_count_badge, preview.playlistCount)
+                                preview.durationSec > 0 -> Formatters.formatDurationMs(
+                                    preview.durationSec * 1000L,
+                                    includeMillis = false,
+                                )
+                                else -> ""
+                            }
+                            if (rightBadge.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color.Black.copy(alpha = 0.78f),
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(8.dp),
+                                ) {
+                                    Text(
+                                        text = rightBadge,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    )
+                                }
+                            }
+                        }
+
                         Text(
                             text = preview.title,
-                            style = MaterialTheme.typography.titleSmall,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        val metaParts = buildList {
-                            if (preview.isPlaylist) {
-                                add(stringResource(R.string.playlist_count_badge, preview.playlistCount))
+
+                        if (preview.uploader.isNotBlank()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Person,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Text(
+                                    text = preview.uploader,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
-                            if (preview.uploader.isNotBlank()) add(preview.uploader)
-                            if (preview.durationSec > 0) {
-                                add(Formatters.formatDurationMs(preview.durationSec * 1000L, includeMillis = false))
-                            }
+                        }
+
+                        val previewBadges = buildList {
                             preview.audioExt?.takeIf { it.isNotBlank() }?.let { add(it.uppercase()) }
                             if (preview.approxFileSizeBytes > 0L) {
                                 add("~${Formatters.formatBytes(preview.approxFileSizeBytes)}")
                             }
-                            preview.extractor?.takeIf { it.isNotBlank() }?.let { add(it) }
+                            val bestRate = preview.formats.firstOrNull { it.isAudioOnly }?.let { maxOf(it.abrKbps, it.tbrKbps) } ?: 0
+                            if (bestRate > 0) add("${bestRate} kbps")
                         }
-                        if (metaParts.isNotEmpty()) {
-                            Text(
-                                text = metaParts.joinToString(" • "),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        if (previewBadges.isNotEmpty()) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                previewBadges.forEach { badge ->
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                    ) {
+                                        Text(
+                                            text = badge,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         if (preview.isPlaylist && preview.playlistEntries.isNotEmpty()) {
@@ -326,28 +456,47 @@ fun DownloadScreen(
                             }
                         }
 
-                        if (preview.formats.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            if (preview.formats.isNotEmpty()) {
                                 FilledTonalButton(
                                     onClick = { showFormatSheet = true },
                                     enabled = !state.isRunning,
                                 ) {
                                     Text(stringResource(R.string.formats_pick_button, preview.formats.size))
                                 }
-                                state.selectedFormatId?.let { fid ->
-                                    InputChip(
-                                        selected = true,
-                                        onClick = { viewModel.selectFormatId(null) },
-                                        label = { Text("#$fid") },
-                                        trailingIcon = {
-                                            Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        },
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    activeProperties = MediaPropertiesPayload(
+                                        title = preview.title,
+                                        coverPath = state.previewThumbnailPath,
+                                        artist = preview.uploader,
+                                        durationSec = preview.durationSec,
+                                        formatLabel = listOfNotNull(
+                                            preview.audioExt?.uppercase(),
+                                            preview.extractor,
+                                        ).joinToString(" • "),
+                                        sizeBytes = preview.approxFileSizeBytes,
+                                        sourceUrl = preview.webpageUrl ?: state.url.trim(),
                                     )
-                                }
+                                },
+                            ) {
+                                Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.download_properties_action))
+                            }
+                            state.selectedFormatId?.let { fid ->
+                                InputChip(
+                                    selected = true,
+                                    onClick = { viewModel.selectFormatId(null) },
+                                    label = { Text("#$fid") },
+                                    trailingIcon = {
+                                        Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    },
+                                )
                             }
                         }
                     }
@@ -902,7 +1051,7 @@ fun DownloadScreen(
             }
         }
 
-        // Result Card (Single or Multi-Item / Video / Cover / Subtitles)
+        // Result Card (Single or Multi-Item / Video / Cover / Subtitles with YTDLnis Properties)
         val res = state.result
         if (res != null && (state.savedMediaEntries.isNotEmpty() || res.imageFile != null || state.savedSubtitlePaths.isNotEmpty())) {
             item {
@@ -915,20 +1064,45 @@ fun DownloadScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         val imgFile = res.imageFile
+                        val primaryDurSec = state.savedMediaEntries.firstOrNull()?.item?.durationSec ?: 0
                         if (imgFile != null) {
                             val bmp = remember(imgFile.absolutePath) {
                                 runCatching { BitmapFactory.decodeFile(imgFile.absolutePath)?.asImageBitmap() }.getOrNull()
                             }
                             if (bmp != null) {
-                                Image(
-                                    bitmap = bmp,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
+                                Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(170.dp)
+                                        .height(180.dp)
                                         .clip(RoundedCornerShape(14.dp)),
-                                )
+                                ) {
+                                    Image(
+                                        bitmap = bmp,
+                                        contentDescription = res.metadata?.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                    if (primaryDurSec > 0) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = Color.Black.copy(alpha = 0.78f),
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .padding(8.dp),
+                                        ) {
+                                            Text(
+                                                text = Formatters.formatDurationMs(
+                                                    primaryDurSec * 1000L,
+                                                    includeMillis = false,
+                                                ),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -938,11 +1112,19 @@ fun DownloadScreen(
                                     Text(
                                         text = meta.title,
                                         style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                                val byline = listOf(meta.artist, meta.year).filter { it.isNotBlank() }.joinToString(" • ")
+                                val firstMedia = state.savedMediaEntries.firstOrNull()?.item
+                                val byline = listOf(
+                                    meta.artist,
+                                    meta.album,
+                                    meta.year,
+                                    firstMedia?.formatLabel.orEmpty(),
+                                    firstMedia?.file?.length()?.takeIf { it > 0L }?.let { Formatters.formatBytes(it) }.orEmpty(),
+                                ).filter { it.isNotBlank() }.joinToString(" • ")
                                 if (byline.isNotBlank()) {
                                     Text(
                                         text = byline,
@@ -970,6 +1152,7 @@ fun DownloadScreen(
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Button(
                                         onClick = {
@@ -995,6 +1178,28 @@ fun DownloadScreen(
                                             overflow = TextOverflow.Ellipsis,
                                         )
                                     }
+                                    IconButton(
+                                        onClick = {
+                                            val meta = entry.item.metadata ?: res.metadata
+                                            activeProperties = MediaPropertiesPayload(
+                                                title = meta?.title?.takeIf { it.isNotBlank() } ?: entry.item.displayName,
+                                                coverPath = res.imageFile?.absolutePath,
+                                                artist = meta?.artist.orEmpty(),
+                                                album = meta?.album.orEmpty(),
+                                                year = meta?.year.orEmpty(),
+                                                durationSec = entry.item.durationSec,
+                                                formatLabel = entry.item.formatLabel,
+                                                sizeBytes = entry.item.file.length(),
+                                                savedPath = entry.savedPath ?: entry.item.displayName,
+                                                sourceUrl = res.sourceUrl ?: state.url.trim(),
+                                            )
+                                        },
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Info,
+                                            contentDescription = stringResource(R.string.download_properties_action),
+                                        )
+                                    }
                                     OutlinedButton(
                                         onClick = { onShareFile(entry.item.file, entry.item.mimeType) },
                                     ) {
@@ -1017,7 +1222,7 @@ fun DownloadScreen(
                             )
                         }
 
-                        if (res.imageFile != null) {
+                        if (res.imageFile != null && (hasActiveEditorSession || state.savedMediaEntries.isEmpty())) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1069,7 +1274,7 @@ fun DownloadScreen(
             }
         }
 
-        // Persistent Download History
+        // Persistent Download History (with YTDLnis-style cover thumbnails & properties)
         if (state.downloadHistory.isNotEmpty()) {
             item {
                 Row(
@@ -1089,40 +1294,112 @@ fun DownloadScreen(
             items(state.downloadHistory, key = { it.id }) { entry ->
                 val missingMsg = stringResource(R.string.download_history_file_missing)
                 val cachedFile = entry.cacheFilePath?.let { File(it) }?.takeIf { it.exists() && it.length() > 0L }
+                val coverFile = entry.coverFilePath?.let { File(it) }?.takeIf { it.exists() && it.length() > 0L }
+                val coverBmp = remember(entry.coverFilePath) {
+                    coverFile?.let { f -> runCatching { BitmapFactory.decodeFile(f.absolutePath)?.asImageBitmap() }.getOrNull() }
+                }
                 OutlinedCard(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(
-                            text = entry.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        val metaLine = buildList {
-                            if (entry.savedPath.isNotBlank()) add(entry.savedPath)
-                            if (entry.sizeBytes > 0L) add(Formatters.formatBytes(entry.sizeBytes))
-                        }.joinToString(" • ")
-                        if (metaLine.isNotBlank()) {
-                            Text(
-                                text = metaLine,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (coverBmp != null) {
+                                    Image(
+                                        bitmap = coverBmp,
+                                        contentDescription = entry.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = when {
+                                            entry.mimeType.startsWith("image/") -> Icons.Rounded.Image
+                                            entry.isVideo -> Icons.Rounded.Movie
+                                            else -> Icons.Rounded.AudioFile
+                                        },
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                }
+                            }
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                Text(
+                                    text = entry.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                val detailParts = buildList {
+                                    if (entry.artist.isNotBlank()) add(entry.artist)
+                                    if (entry.formatLabel.isNotBlank()) add(entry.formatLabel)
+                                    if (entry.durationSec > 0) {
+                                        add(Formatters.formatDurationMs(entry.durationSec * 1000L, includeMillis = false))
+                                    }
+                                    if (entry.sizeBytes > 0L) add(Formatters.formatBytes(entry.sizeBytes))
+                                }
+                                if (detailParts.isNotEmpty()) {
+                                    Text(
+                                        text = detailParts.joinToString(" • "),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                if (entry.savedPath.isNotBlank()) {
+                                    Text(
+                                        text = entry.savedPath,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             if (!entry.mimeType.startsWith("image/")) {
                                 FilledTonalButton(
                                     onClick = {
                                         when {
-                                            cachedFile != null -> onOpenInEditor(cachedFile, entry.title, null, null, null)
+                                            cachedFile != null -> {
+                                                val restoredMeta = AudioMetadata(
+                                                    title = entry.title,
+                                                    artist = entry.artist,
+                                                    album = entry.album,
+                                                    year = entry.year,
+                                                    comment = entry.sourceUrl,
+                                                ).takeUnless { it.isEmpty }
+                                                onOpenInEditor(
+                                                    cachedFile,
+                                                    entry.title,
+                                                    coverFile,
+                                                    if (coverFile != null) "image/jpeg" else null,
+                                                    restoredMeta,
+                                                )
+                                            }
                                             !entry.contentUriString.isNullOrBlank() -> onOpenHistoryUri(entry.contentUriString)
                                             else -> onShowMessage(missingMsg)
                                         }
@@ -1143,6 +1420,24 @@ fun DownloadScreen(
                                 }
                             } else {
                                 Spacer(Modifier.weight(1f))
+                            }
+                            IconButton(
+                                onClick = {
+                                    activeProperties = MediaPropertiesPayload(
+                                        title = entry.title,
+                                        coverPath = coverFile?.absolutePath,
+                                        artist = entry.artist,
+                                        album = entry.album,
+                                        year = entry.year,
+                                        durationSec = entry.durationSec,
+                                        formatLabel = entry.formatLabel.ifBlank { entry.mimeType },
+                                        sizeBytes = entry.sizeBytes,
+                                        savedPath = entry.savedPath,
+                                        sourceUrl = entry.sourceUrl,
+                                    )
+                                },
+                            ) {
+                                Icon(Icons.Rounded.Info, contentDescription = stringResource(R.string.download_properties_action))
                             }
                             IconButton(
                                 onClick = {
@@ -1171,6 +1466,14 @@ fun DownloadScreen(
                 }
             }
         }
+    }
+
+    val propsPayload = activeProperties
+    if (propsPayload != null) {
+        MediaPropertiesSheet(
+            payload = propsPayload,
+            onDismiss = { activeProperties = null },
+        )
     }
 
     if (showCookieSheet) {
@@ -1371,6 +1674,7 @@ private fun CookieManagerSheet(
 ) {
     val scope = rememberCoroutineScope()
     var pastedText by remember { mutableStateOf("") }
+    var showWebLogin by remember { mutableStateOf(false) }
 
     val cookieFilePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -1422,6 +1726,17 @@ private fun CookieManagerSheet(
                             )
                         }
                     }
+                }
+            }
+
+            if (PlatformCookieWebLogin.isSupported) {
+                Button(
+                    onClick = { showWebLogin = true },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Rounded.Language, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.cookies_signin_webview))
                 }
             }
 
@@ -1493,6 +1808,112 @@ private fun CookieManagerSheet(
                 }
             }
         }
+    }
+
+    if (showWebLogin && PlatformCookieWebLogin.isSupported) {
+        PlatformCookieWebLogin.LoginDialog(
+            initialUrl = state.url,
+            onCookiesExtracted = { netscapeText ->
+                scope.launch {
+                    if (viewModel.importCookiesFromText(netscapeText)) {
+                        showWebLogin = false
+                        onDismiss()
+                    }
+                }
+            },
+            onDismiss = { showWebLogin = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MediaPropertiesSheet(
+    payload: MediaPropertiesPayload,
+    onDismiss: () -> Unit,
+) {
+    val coverBmp = remember(payload.coverPath) {
+        payload.coverPath?.let { p ->
+            File(p).takeIf { it.exists() && it.length() > 0L }?.let { f ->
+                runCatching { BitmapFactory.decodeFile(f.absolutePath)?.asImageBitmap() }.getOrNull()
+            }
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(stringResource(R.string.download_properties_title), style = MaterialTheme.typography.headlineSmall)
+
+            if (coverBmp != null) {
+                Image(
+                    bitmap = coverBmp,
+                    contentDescription = payload.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(190.dp)
+                        .clip(RoundedCornerShape(14.dp)),
+                )
+            }
+
+            Text(
+                text = payload.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+
+            HorizontalDivider()
+
+            payload.artist.takeIf { it.isNotBlank() }?.let {
+                PropertyRow(stringResource(R.string.download_prop_channel), it)
+            }
+            payload.album.takeIf { it.isNotBlank() }?.let {
+                PropertyRow(stringResource(R.string.download_prop_album), it)
+            }
+            payload.year.takeIf { it.isNotBlank() }?.let {
+                PropertyRow(stringResource(R.string.download_prop_year), it)
+            }
+            if (payload.durationSec > 0) {
+                PropertyRow(
+                    stringResource(R.string.download_prop_duration),
+                    Formatters.formatDurationMs(payload.durationSec * 1000L, includeMillis = false),
+                )
+            }
+            payload.formatLabel.takeIf { it.isNotBlank() }?.let {
+                PropertyRow(stringResource(R.string.download_prop_format), it)
+            }
+            if (payload.sizeBytes > 0L) {
+                PropertyRow(stringResource(R.string.download_prop_size), Formatters.formatBytes(payload.sizeBytes))
+            }
+            payload.savedPath.takeIf { it.isNotBlank() }?.let {
+                PropertyRow(stringResource(R.string.download_prop_path), it)
+            }
+            payload.sourceUrl.takeIf { it.isNotBlank() }?.let {
+                PropertyRow(stringResource(R.string.download_prop_source), it)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PropertyRow(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 

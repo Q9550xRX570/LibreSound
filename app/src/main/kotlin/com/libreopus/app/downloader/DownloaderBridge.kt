@@ -148,6 +148,12 @@ data class DownloadHistoryEntry(
     val isVideo: Boolean = false,
     val sizeBytes: Long = 0L,
     val timestampMs: Long = 0L,
+    val coverFilePath: String? = null,
+    val artist: String = "",
+    val album: String = "",
+    val year: String = "",
+    val durationSec: Int = 0,
+    val formatLabel: String = "",
 )
 
 object DownloadHistoryCodec {
@@ -168,7 +174,13 @@ object DownloadHistoryCodec {
                 .append("\",\"isVideo\":").append(e.isVideo)
                 .append(",\"sizeBytes\":").append(e.sizeBytes)
                 .append(",\"timestampMs\":").append(e.timestampMs)
-                .append('}')
+                .append(",\"coverFile\":\"").append(escapeJsonString(e.coverFilePath.orEmpty()))
+                .append("\",\"artist\":\"").append(escapeJsonString(e.artist))
+                .append("\",\"album\":\"").append(escapeJsonString(e.album))
+                .append("\",\"year\":\"").append(escapeJsonString(e.year))
+                .append("\",\"durationSec\":").append(e.durationSec)
+                .append(",\"formatLabel\":\"").append(escapeJsonString(e.formatLabel))
+                .append("\"}")
         }
         sb.append(']')
         return sb.toString()
@@ -189,6 +201,12 @@ object DownloadHistoryCodec {
             val isVideo = map["isVideo"] as? Boolean ?: false
             val sizeBytes = (map["sizeBytes"] as? Number)?.toLong() ?: 0L
             val timestampMs = (map["timestampMs"] as? Number)?.toLong() ?: 0L
+            val coverFile = map["coverFile"]?.toString()?.takeIf { it.isNotBlank() }
+            val artist = map["artist"]?.toString().orEmpty()
+            val album = map["album"]?.toString().orEmpty()
+            val year = map["year"]?.toString().orEmpty()
+            val durationSec = (map["durationSec"] as? Number)?.toInt() ?: 0
+            val formatLabel = map["formatLabel"]?.toString().orEmpty()
             DownloadHistoryEntry(
                 id = id,
                 title = title,
@@ -200,6 +218,12 @@ object DownloadHistoryCodec {
                 isVideo = isVideo,
                 sizeBytes = sizeBytes,
                 timestampMs = timestampMs,
+                coverFilePath = coverFile,
+                artist = artist,
+                album = album,
+                year = year,
+                durationSec = durationSec,
+                formatLabel = formatLabel,
             )
         }.take(MAX_ENTRIES)
     }
@@ -306,6 +330,8 @@ data class DownloadedMediaItem(
     val isVideo: Boolean,
     val mimeType: String,
     val metadata: AudioMetadata? = null,
+    val durationSec: Int = 0,
+    val formatLabel: String = "",
 )
 
 data class DownloadedArtifact(
@@ -314,6 +340,7 @@ data class DownloadedArtifact(
     val imageFile: File? = null,
     val imageDisplayName: String? = null,
     val imageMimeType: String? = null,
+    val saveCoverToPictures: Boolean = false,
     val metadata: AudioMetadata? = null,
     val sourceUrl: String? = null,
     val mediaItems: List<DownloadedMediaItem> = emptyList(),
@@ -338,6 +365,11 @@ interface MediaDownloader {
         url: String,
         options: DownloadExecutionOptions = DownloadExecutionOptions(),
     ): MediaTrackPreview
+
+    suspend fun fetchPreviewThumbnail(
+        context: Context,
+        thumbnailUrl: String,
+    ): File? = null
 
     suspend fun execute(
         context: Context,
@@ -923,9 +955,18 @@ object YtDlpErrorClassifier {
     }
 }
 
+data class InfoJsonDetails(
+    val metadata: AudioMetadata? = null,
+    val thumbnailUrl: String? = null,
+    val durationSec: Int = 0,
+    val formatLabel: String = "",
+)
+
 object InfoJsonMetadataParser {
 
-    fun parse(jsonText: String): AudioMetadata? {
+    fun parse(jsonText: String): AudioMetadata? = parseDetails(jsonText)?.metadata
+
+    fun parseDetails(jsonText: String): InfoJsonDetails? {
         val root = runCatching { SimpleJsonParser.parse(jsonText) as? Map<*, *> }.getOrNull() ?: return null
 
         val track = root["track"]?.toString()?.trim().orEmpty()
@@ -973,6 +1014,24 @@ object InfoJsonMetadataParser {
             root["original_url"]?.toString()?.trim().orEmpty(),
         ).firstOrNull { it.isNotBlank() && it != "null" }.orEmpty()
 
+        val thumbnailUrl = listOfNotNull(
+            root["thumbnail"]?.toString()?.trim()?.takeIf { it.startsWith("http") },
+            (root["thumbnails"] as? List<*>)
+                ?.mapNotNull { it as? Map<*, *> }
+                ?.lastOrNull()
+                ?.get("url")?.toString()?.trim()?.takeIf { it.startsWith("http") },
+        ).firstOrNull()
+
+        val durationSec = ((root["duration"] as? Number)?.toInt() ?: 0).coerceAtLeast(0)
+        val ext = root["ext"]?.toString()?.trim()?.takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+        val acodec = root["acodec"]?.toString()?.trim()?.takeIf { it.isNotBlank() && it != "none" && it != "null" }.orEmpty()
+        val abr = ((root["abr"] as? Number)?.toInt() ?: (root["tbr"] as? Number)?.toInt() ?: 0).coerceAtLeast(0)
+        val formatLabel = buildList {
+            if (ext.isNotEmpty()) add(ext.uppercase())
+            if (abr > 0) add("$abr kbps")
+            if (acodec.isNotEmpty()) add(acodec.substringBefore('.'))
+        }.joinToString(" • ")
+
         val meta = AudioMetadata(
             title = title,
             artist = artist,
@@ -982,7 +1041,13 @@ object InfoJsonMetadataParser {
             trackNumber = trackNumber,
             genre = genre,
             comment = webpageUrl,
+        ).takeUnless { it.isEmpty }
+
+        return InfoJsonDetails(
+            metadata = meta,
+            thumbnailUrl = thumbnailUrl,
+            durationSec = durationSec,
+            formatLabel = formatLabel,
         )
-        return meta.takeUnless { it.isEmpty }
     }
 }

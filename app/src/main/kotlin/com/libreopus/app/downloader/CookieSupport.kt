@@ -340,6 +340,85 @@ object CookieParser {
         )
     }
 
+    fun fromWebViewCookieStrings(
+        domainCookieHeaders: Map<String, String>,
+        nowEpochSec: Long = System.currentTimeMillis() / 1000L,
+    ): CookieParseResult {
+        val normalizedMap = LinkedHashMap<String, String>()
+        val domains = LinkedHashSet<String>()
+        val expiresSec = (nowEpochSec + 365L * 24L * 3600L).coerceAtLeast(1L)
+
+        for ((rawKey, rawHeader) in domainCookieHeaders) {
+            if (rawHeader.isBlank()) continue
+            val parsedHost = extractHostFromKey(rawKey).lowercase()
+            if (parsedHost.isBlank() || (!parsedHost.contains('.') && parsedHost != "localhost")) continue
+            val cleanHost = parsedHost.trimStart('.')
+            val keyPrefersSubdomains = parsedHost.startsWith(".")
+
+            val pairs = rawHeader.split(';')
+            for (pair in pairs) {
+                val eq = pair.indexOf('=')
+                if (eq <= 0) continue
+                val name = sanitizeField(pair.substring(0, eq)).trim()
+                val value = sanitizeField(pair.substring(eq + 1)).trim()
+                if (name.isBlank()) continue
+
+                val isHostOnlyPrefix = name.startsWith("__Host-", ignoreCase = true)
+                val targetDomain: String
+                val includeSubdomains: String
+                if (isHostOnlyPrefix || !keyPrefersSubdomains) {
+                    targetDomain = cleanHost
+                    includeSubdomains = "FALSE"
+                } else {
+                    targetDomain = ".$cleanHost"
+                    includeSubdomains = "TRUE"
+                }
+                val isSecure = name.startsWith("__Secure-", ignoreCase = true) ||
+                    name.startsWith("__Host-", ignoreCase = true) ||
+                    rawKey.startsWith("https://", ignoreCase = true) ||
+                    !rawKey.contains("://")
+                val dedupKey = "${targetDomain.lowercase()}\t$name"
+                normalizedMap[dedupKey] = listOf(
+                    targetDomain,
+                    includeSubdomains,
+                    "/",
+                    if (isSecure) "TRUE" else "FALSE",
+                    expiresSec.toString(),
+                    name,
+                    value,
+                ).joinToString("\t")
+                domains += cleanHost
+            }
+        }
+
+        if (normalizedMap.isEmpty()) {
+            throw IllegalArgumentException("No session cookies captured from WebView")
+        }
+
+        val text = buildString {
+            append("# Netscape HTTP Cookie File\n")
+            append("# Captured by LibreOpus in-app WebView\n\n")
+            normalizedMap.values.forEach { line ->
+                append(line).append('\n')
+            }
+        }
+        return CookieParseResult(
+            netscapeText = text,
+            summary = CookieSummary(
+                cookieCount = normalizedMap.size,
+                domains = domains.toList(),
+                convertedFromJson = false,
+            ),
+        )
+    }
+
+    private fun extractHostFromKey(rawKey: String): String {
+        val trimmed = rawKey.trim()
+        val afterScheme = trimmed.substringAfter("://", trimmed)
+        val hostPort = afterScheme.substringBefore('/').substringBefore('?').substringBefore('#')
+        return hostPort.substringBefore(':').trim()
+    }
+
     private fun normalizeBoolCol(col: String): String? = when (col.trim().uppercase()) {
         "TRUE" -> "TRUE"
         "FALSE" -> "FALSE"

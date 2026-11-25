@@ -15,6 +15,7 @@ import com.libreopus.audio.api.PcmTimelineReader
 import com.libreopus.dsp.container.FlacMetadataCodec
 import com.libreopus.dsp.container.LosslessOpusEditor
 import com.libreopus.dsp.container.Mp3TagReader
+import com.libreopus.dsp.container.Mp4MetadataWriter
 import com.libreopus.dsp.container.OpusContainer
 import java.io.File
 import java.io.OutputStream
@@ -44,9 +45,10 @@ class LiteAudioEngine(
     override suspend fun decodeToPcm(
         source: AudioSource,
         sessionDir: File,
+        generateWaveform: Boolean,
         onProgress: (Float) -> Unit,
     ): DecodedAudio = withContext(Dispatchers.IO) {
-        MediaCodecDecoder.decode(source, sessionDir, onProgress)
+        MediaCodecDecoder.decode(source, sessionDir, generateWaveform, onProgress)
     }
 
     override suspend fun exportTimeline(
@@ -82,6 +84,8 @@ class LiteAudioEngine(
             format.isOggOpus -> source.openInputStream().use { OpusContainer.readMetadata(it) } ?: AudioMetadata()
             format == AudioContainerFormat.FLAC -> source.openInputStream().use { FlacMetadataCodec.readMetadata(it) } ?: AudioMetadata()
             format == AudioContainerFormat.MP3 -> source.openInputStream().use { Mp3TagReader.readMetadata(it) } ?: AudioMetadata()
+            (format == AudioContainerFormat.M4A || format == AudioContainerFormat.VIDEO_AUDIO) && source.localFile != null ->
+                Mp4MetadataWriter.readMetadata(source.localFile!!) ?: AudioMetadata()
             else -> AudioMetadata()
         }
     }
@@ -95,6 +99,8 @@ class LiteAudioEngine(
         when {
             format.isOggOpus -> LosslessOpusEditor.rewriteTagsLossless(sourceFile, metadata, outputStream)
             format == AudioContainerFormat.FLAC -> FlacMetadataCodec.rewriteMetadata(sourceFile, metadata, outputStream)
+            format == AudioContainerFormat.M4A || format == AudioContainerFormat.VIDEO_AUDIO ->
+                Mp4MetadataWriter.writeMetadata(sourceFile, metadata, outputStream)
             else -> false
         }
     }

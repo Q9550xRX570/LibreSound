@@ -9,4 +9,10 @@
     <string name="download_notif_cancel">Cancel</string>
     <string name="ytdlp_auto_updating_retry">Updating yt-dlp and retrying…</string>
     <string name="ytdlp_fallback_client_retry">Retrying with alternate YouTube client…</string>
+    <string name="cookies_webview_title">Browser Sign-In (cookies.txt)</string>
+    <string name="cookies_webview_url_label">Website URL</string>
+    <string name="cookies_webview_go">Open URL</string>
+    <string name="cookies_webview_save">Save Cookies</string>
+    <string name="cookies_webview_clear_session">Clear Browser Session</string>
+    <string name="cookies_webview_none_captured">No active session cookies found yet. Complete sign-in first.</string>
 </resources>

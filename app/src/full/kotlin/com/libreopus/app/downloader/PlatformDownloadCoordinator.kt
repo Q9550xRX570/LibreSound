@@ -119,12 +119,26 @@ private class FullDownloadCoordinator(
                     )
                 }
 
-                val savedImageInfo = artifact.imageFile?.let { img ->
-                    val mime = artifact.imageMimeType ?: "image/jpeg"
-                    MediaStorageHelper.saveImageToPictures(appContext, img.name, mime, img)
-                        ?.let { path -> img to path }
+                val savedImageInfo = if (artifact.saveCoverToPictures) {
+                    artifact.imageFile?.let { img ->
+                        val mime = artifact.imageMimeType ?: "image/jpeg"
+                        MediaStorageHelper.saveImageToPictures(appContext, img.name, mime, img)
+                            ?.let { path -> img to path }
+                    }
+                } else {
+                    null
                 }
                 val savedImage = savedImageInfo?.second
+
+                val persistedCoverPath: String? = artifact.imageFile?.takeIf { it.exists() && it.length() > 0L }?.let { img ->
+                    runCatching {
+                        val coverDir = File(appContext.filesDir, "ytdlp_covers").apply { mkdirs() }
+                        val ext = img.extension.lowercase().ifBlank { "jpg" }
+                        val coverTarget = File(coverDir, "cover_${UUID.randomUUID()}.$ext")
+                        img.copyTo(coverTarget, overwrite = true)
+                        coverTarget.absolutePath
+                    }.getOrNull()
+                }
 
                 val savedSubs = artifact.subtitleFiles.mapNotNull { sub ->
                     MediaStorageHelper.saveFileToDownloads(appContext, sub.name, "text/plain", sub)
@@ -137,7 +151,8 @@ private class FullDownloadCoordinator(
                 val newHistoryItems = buildList {
                     savedEntries.forEach { saved ->
                         val media = saved.item
-                        val title = media.metadata?.title?.takeIf { it.isNotBlank() } ?: media.displayName
+                        val meta = media.metadata ?: artifact.metadata
+                        val title = meta?.title?.takeIf { it.isNotBlank() } ?: media.displayName
                         add(
                             DownloadHistoryEntry(
                                 id = UUID.randomUUID().toString(),
@@ -150,6 +165,12 @@ private class FullDownloadCoordinator(
                                 isVideo = media.isVideo,
                                 sizeBytes = media.file.length(),
                                 timestampMs = nowMs,
+                                coverFilePath = persistedCoverPath,
+                                artist = meta?.artist.orEmpty(),
+                                album = meta?.album.orEmpty(),
+                                year = meta?.year.orEmpty(),
+                                durationSec = media.durationSec,
+                                formatLabel = media.formatLabel,
                             ),
                         )
                     }
@@ -167,6 +188,8 @@ private class FullDownloadCoordinator(
                                 isVideo = false,
                                 sizeBytes = imgFile.length(),
                                 timestampMs = nowMs,
+                                coverFilePath = persistedCoverPath ?: imgFile.absolutePath,
+                                formatLabel = imgFile.extension.uppercase(),
                             ),
                         )
                     }
@@ -180,6 +203,12 @@ private class FullDownloadCoordinator(
                             .distinctBy { "${it.savedPath}|${it.sourceUrl}" }
                             .take(DownloadHistoryCodec.MAX_ENTRIES)
                         prefsRepo.setYtdlpDownloadHistoryJson(DownloadHistoryCodec.encode(merged))
+                        val keptCovers = merged.mapNotNull { it.coverFilePath }.toSet()
+                        File(appContext.filesDir, "ytdlp_covers").listFiles()?.forEach { file ->
+                            if (file.isFile && file.absolutePath !in keptCovers) {
+                                runCatching { file.delete() }
+                            }
+                        }
                     }
                 }
 

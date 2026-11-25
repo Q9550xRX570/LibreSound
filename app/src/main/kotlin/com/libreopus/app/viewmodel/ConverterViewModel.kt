@@ -113,7 +113,7 @@ class ConverterViewModel(application: Application) : AndroidViewModel(applicatio
                     val itemDir = File(workRoot, "item_$idx").apply { mkdirs() }
                     try {
                         val src = MediaStorageHelper.buildAudioSource(ctx, item.uri)
-                        val decoded = engine.decodeToPcm(src, itemDir) { p ->
+                        val decoded = engine.decodeToPcm(src, itemDir, generateWaveform = false) { p ->
                             updateItem(idx) { it.copy(progress = p * 0.45f) }
                         }
                         var timeline = EditTimeline.fromSingleFile(

@@ -9,6 +9,7 @@ interface AudioSource {
     val displayName: String
     val fileSizeBytes: Long
     val mimeType: String?
+    val localFile: File? get() = null
     fun openInputStream(): InputStream
 }
 
@@ -52,6 +53,7 @@ interface AudioEngine {
     suspend fun decodeToPcm(
         source: AudioSource,
         sessionDir: File,
+        generateWaveform: Boolean = true,
         onProgress: (Float) -> Unit = {},
     ): DecodedAudio
 

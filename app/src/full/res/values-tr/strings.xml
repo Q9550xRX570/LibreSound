@@ -9,4 +9,10 @@
     <string name="download_notif_cancel">İptal</string>
     <string name="ytdlp_auto_updating_retry">yt-dlp güncellenip yeniden deneniyor…</string>
     <string name="ytdlp_fallback_client_retry">Alternatif YouTube istemcisiyle yeniden deneniyor…</string>
+    <string name="cookies_webview_title">Tarayıcıdan Oturum Aç (cookies.txt)</string>
+    <string name="cookies_webview_url_label">Site Adresi</string>
+    <string name="cookies_webview_go">Adrese Git</string>
+    <string name="cookies_webview_save">Çerezleri Kaydet</string>
+    <string name="cookies_webview_clear_session">Tarayıcı Oturumunu Temizle</string>
+    <string name="cookies_webview_none_captured">Henüz oturum çerezi bulunamadı. Önce giriş işlemini tamamlayın.</string>
 </resources>

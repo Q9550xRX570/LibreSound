@@ -138,6 +138,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             override val displayName: String = displayName
             override val fileSizeBytes: Long = file.length()
             override val mimeType: String? = null
+            override val localFile: File = file
             override fun openInputStream() = file.inputStream()
         }
         openSourceInternal(
@@ -171,7 +172,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             val store = DiskPcmStore(dir)
             pcmStore = store
 
-            _state.update { it.copy(busyLabel = "decode", busyProgress = 0f) }
+            _state.update { it.copy(busyLabel = ctx.getString(R.string.editor_busy_decoding), busyProgress = 0f) }
             try {
                 val decoded = engine.decodeToPcm(source, dir) { p ->
                     _state.update { it.copy(busyProgress = p) }
@@ -662,7 +663,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 val source = MediaStorageHelper.buildAudioSource(getApplication(), uri)
                 val subDir = File(dir, "extra_${System.currentTimeMillis()}").apply { mkdirs() }
-                val decoded = engine.decodeToPcm(source, subDir) { p ->
+                val decoded = engine.decodeToPcm(source, subDir, generateWaveform = false) { p ->
                     _state.update { it.copy(busyProgress = p * 0.5f) }
                 }
                 val otherTl = EditTimeline.fromSingleFile(decoded.info.sampleRate, decoded.info.channels, decoded.pcmFile, decoded.totalFrames)

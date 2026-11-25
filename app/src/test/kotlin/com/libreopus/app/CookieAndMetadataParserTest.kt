@@ -191,7 +191,7 @@ class CookieAndMetadataParserTest {
     }
 
     @Test
-    fun `downloadHistoryCodec roundTrips entries with escapes and enforces 30 entry limit`() {
+    fun `downloadHistoryCodec roundTrips extended cover and metadata properties and enforces 30 entry limit`() {
         val entries = (1..35).map { idx ->
             DownloadHistoryEntry(
                 id = "id_$idx",
@@ -204,6 +204,12 @@ class CookieAndMetadataParserTest {
                 isVideo = idx % 2 == 0,
                 sizeBytes = 1024L * idx,
                 timestampMs = 1_700_000_000_000L + idx,
+                coverFilePath = "/data/user/0/app/files/ytdlp_covers/c_$idx.jpg",
+                artist = "Artist $idx",
+                album = "Album $idx",
+                year = "2026",
+                durationSec = 180 + idx,
+                formatLabel = "OPUS • 160 kbps",
             )
         }
         val encoded = DownloadHistoryCodec.encode(entries)
@@ -213,9 +219,57 @@ class CookieAndMetadataParserTest {
         assertEquals("Track #1 \"Live\" \\ Mix", decoded.first().title)
         assertEquals("content://media/external/audio/media/1", decoded.first().contentUriString)
         assertEquals("audio/opus", decoded.first().mimeType)
+        assertEquals("/data/user/0/app/files/ytdlp_covers/c_1.jpg", decoded.first().coverFilePath)
+        assertEquals("Artist 1", decoded.first().artist)
+        assertEquals("Album 1", decoded.first().album)
+        assertEquals("2026", decoded.first().year)
+        assertEquals(181, decoded.first().durationSec)
+        assertEquals("OPUS • 160 kbps", decoded.first().formatLabel)
         assertFalse(decoded.first().isVideo)
         assertTrue(decoded[1].isVideo)
         assertEquals(2048L, decoded[1].sizeBytes)
         assertTrue(DownloadHistoryCodec.decode("{invalid").isEmpty())
+    }
+
+    @Test
+    fun `fromWebViewCookieStrings generates valid yt-dlp Netscape cookies with subdomains and host prefixes`() {
+        val captured = mapOf(
+            ".youtube.com" to "VISITOR_INFO1_LIVE=abc=123; LOGIN_INFO=tok99",
+            "accounts.google.com" to "__Host-GAPS=host_only_val; __Secure-3PSID=sec_val",
+        )
+        val res = CookieParser.fromWebViewCookieStrings(captured, nowEpochSec = 1_700_000_000L)
+        assertEquals(4, res.summary.cookieCount)
+        assertTrue(res.netscapeText.contains(".youtube.com\tTRUE\t/\tTRUE\t"))
+        assertTrue(res.netscapeText.contains("VISITOR_INFO1_LIVE\tabc=123"))
+        assertTrue(res.netscapeText.contains("accounts.google.com\tFALSE\t/\tTRUE\t"))
+        assertTrue(res.netscapeText.contains("__Host-GAPS\thost_only_val"))
+
+        // Verify the generated text passes strict Netscape round-trip validation
+        val reParsed = CookieParser.parseAndNormalize(res.netscapeText)
+        assertEquals(4, reParsed.summary.cookieCount)
+    }
+
+    @Test
+    fun `infoJsonMetadataParser parseDetails extracts thumbnail, duration, and format label`() {
+        val json = """
+            {
+              "title": "Demo Track",
+              "uploader": "Channel Name",
+              "duration": 245.7,
+              "ext": "m4a",
+              "acodec": "mp4a.40.2",
+              "abr": 128,
+              "thumbnails": [
+                {"url": "https://img.example.com/small.jpg"},
+                {"url": "https://img.example.com/hqdefault.jpg"}
+              ]
+            }
+        """.trimIndent()
+        val details = InfoJsonMetadataParser.parseDetails(json)
+        assertNotNull(details)
+        assertEquals("https://img.example.com/hqdefault.jpg", details!!.thumbnailUrl)
+        assertEquals(245, details.durationSec)
+        assertEquals("M4A • 128 kbps • mp4a", details.formatLabel)
+        assertEquals("Demo Track", details.metadata?.title)
     }
 }
