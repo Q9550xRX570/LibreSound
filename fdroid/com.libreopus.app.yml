@@ -1,0 +1,31 @@
+Categories:
+  - Multimedia
+License: GPL-3.0-or-later
+AuthorName: LibreOpus Contributors
+WebSite: https://libreopus.com
+SourceCode: https://github.com/libreopus/libreopus
+IssueTracker: https://github.com/libreopus/libreopus/issues
+Changelog: https://github.com/libreopus/libreopus/releases
+
+AutoName: LibreOpus
+
+RepoType: git
+Repo: https://github.com/libreopus/libreopus.git
+
+# For Verified Developer Signature (Reproducible Builds), set Binaries and AllowedAPKSigningKeys
+# once your official GitHub release is tagged:
+# Binaries: https://github.com/libreopus/libreopus/releases/download/v%v/LibreOpus-v%v-lite-release.apk
+# AllowedAPKSigningKeys: <your-sha256-signing-certificate-fingerprint>
+
+Builds:
+  - versionName: 1.0.0
+    versionCode: 1
+    commit: v1.0.0
+    subdir: app
+    gradle:
+      - lite
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 1.0.0
+CurrentVersionCode: 1

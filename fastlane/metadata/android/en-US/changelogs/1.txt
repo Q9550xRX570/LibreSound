@@ -1,0 +1,1 @@
+Initial release: lossless .opus trimming & tagging, Material You waveform studio, full DSP effects suite, batch converter, and F-Droid reproducible build support.

@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LibreOpus</string>
+    <string name="tagline">Özgür Ses Stüdyosu</string>
+
+    <!-- Navigation -->
+    <string name="nav_studio">Stüdyo</string>
+    <string name="nav_editor">Düzenleyici</string>
+    <string name="nav_download">İndir</string>
+    <string name="nav_converter">Dönüştürücü</string>
+    <string name="nav_settings">Ayarlar</string>
+
+    <!-- Home -->
+    <string name="home_hero_title">Ses veya Video Aç</string>
+    <string name="home_hero_subtitle">Ses dosyalarını açıp düzenleyin veya videolardan sesi doğrudan cihazınızda ayıklayın.</string>
+    <string name="home_pick_audio">Ses Dosyası Seç</string>
+    <string name="home_extract_video">Videodan Ses Ayıkla</string>
+    <string name="home_quick_tools">Stüdyo Araçları</string>
+    <string name="home_tool_trim_edit">Kırp &amp; Etiketle</string>
+    <string name="home_tool_trim_edit_desc">Sesi kes, seviyeyi ayarla ve etiketleri düzenle</string>
+    <string name="home_tool_download">Medya İndirici</string>
+    <string name="home_tool_download_desc">yt-dlp ile en iyi ses veya kapak görseli indir</string>
+    <string name="home_tool_converter">Toplu Dönüştürücü</string>
+    <string name="home_tool_converter_desc">Çoklu ses dönüştürme ve videodan ses ayıklama</string>
+    <string name="home_recent_files">Son Dosyalar</string>
+    <string name="home_recent_empty">Henüz açılmış dosya yok. Başlamak için bir ses veya video dosyası seçin.</string>
+    <string name="home_clear_recent">Temizle</string>
+
+    <!-- Editor Top & Status -->
+    <string name="editor_undo">Geri Al</string>
+    <string name="editor_redo">İleri Al</string>
+    <string name="editor_export">Dışa Aktar</string>
+    <string name="editor_selection_range">Seçim: %1$s – %2$s (%3$s)</string>
+    <string name="editor_select_all">Tümünü Seç</string>
+    <string name="editor_zoom_in">Yakınlaştır</string>
+    <string name="editor_zoom_out">Uzaklaştır</string>
+
+    <!-- Transport -->
+    <string name="transport_jump_start">Başa Sar</string>
+    <string name="transport_play">Oynat</string>
+    <string name="transport_pause">Duraklat</string>
+    <string name="transport_play_selection">Seçimi Oynat</string>
+    <string name="transport_loop_ab">A–B Döngü</string>
+    <string name="transport_level">Seviye</string>
+
+    <!-- Bottom Tool Tabs -->
+    <string name="tab_edit">Düzenle</string>
+    <string name="tab_effects">Efektler</string>
+    <string name="tab_tags">Etiketler</string>
+
+    <!-- Edit Actions -->
+    <string name="action_trim">Seçime Kırp</string>
+    <string name="action_cut">Seçimi Kes/Sil</string>
+    <string name="action_split">İmleçten Böl</string>
+    <string name="action_silence">Sessizleştir</string>
+    <string name="action_copy">Kopyala</string>
+    <string name="action_paste">Yapıştır</string>
+    <string name="action_append_file">Dosya Ekle</string>
+    <string name="action_mix_overlay">Üst Üste Miksle</string>
+
+    <!-- DSP Effect Actions -->
+    <string name="effect_gain_norm">Kazanç &amp; Normalize</string>
+    <string name="effect_fade">Fade In / Out</string>
+    <string name="effect_eq">7-Bant EQ</string>
+    <string name="effect_speed_pitch">Hız &amp; Perde</string>
+    <string name="effect_filter_gate">Filtre &amp; Gürültü Kapısı</string>
+    <string name="effect_trim_silence">Sessizlik Kırp</string>
+    <string name="effect_reverse">Ters Çevir</string>
+    <string name="effect_channels">Kanallar</string>
+
+    <!-- Effect Sheets -->
+    <string name="apply">Uygula</string>
+    <string name="cancel">İptal</string>
+    <string name="close">Kapat</string>
+    <string name="gain_db_label">Kazanç (dB): %1$.1f dB</string>
+    <string name="norm_peak_button">Tepe Normalize (-1.0 dBFS)</string>
+    <string name="norm_lufs_button">Ses Yüksekliği Normalize (%1$.0f LUFS)</string>
+    <string name="lufs_target_label">Hedef Ses Yüksekliği: %1$.0f LUFS</string>
+    <string name="fade_direction_in">Giriş (Fade In)</string>
+    <string name="fade_direction_out">Çıkış (Fade Out)</string>
+    <string name="fade_curve_linear">Doğrusal</string>
+    <string name="fade_curve_exp">Üstel</string>
+    <string name="fade_curve_log">Logaritmik</string>
+    <string name="fade_curve_scurve">S-Eğrisi</string>
+    <string name="eq_presets">Önayarlar</string>
+    <string name="speed_linked">Hız ve Perdeyi Bağla</string>
+    <string name="speed_tempo_label">Tempo: %1$.2fx</string>
+    <string name="speed_pitch_label">Perde: %1$+.1f yarım ton</string>
+    <string name="filter_hp_label">High-Pass Kesim: %1$d Hz</string>
+    <string name="filter_lp_label">Low-Pass Kesim: %1$d Hz</string>
+    <string name="filter_enable_hp">High-Pass Etkinleştir</string>
+    <string name="filter_enable_lp">Low-Pass Etkinleştir</string>
+    <string name="gate_enable">Gürültü Kapısı Uygula</string>
+    <string name="gate_threshold_label">Kapı Eşiği: %1$.0f dBFS</string>
+    <string name="silence_thresh_label">Sessizlik Eşiği: %1$.0f dBFS</string>
+    <string name="silence_min_ms_label">En Az Sessizlik: %1$d ms</string>
+    <string name="channel_to_mono_mix">Stereo → Mono (Karışım)</string>
+    <string name="channel_to_mono_left">Sadece Sol Kanal (Mono)</string>
+    <string name="channel_to_mono_right">Sadece Sağ Kanal (Mono)</string>
+    <string name="channel_swap_lr">Sol &amp; Sağ Değiştir</string>
+    <string name="channel_mono_to_stereo">Mono → Stereo</string>
+
+    <!-- Metadata -->
+    <string name="meta_title">Etiketler &amp; Kapak Fotoğrafı</string>
+    <string name="meta_field_title">Başlık</string>
+    <string name="meta_field_artist">Sanatçı</string>
+    <string name="meta_field_album">Albüm</string>
+    <string name="meta_field_album_artist">Albüm Sanatçısı</string>
+    <string name="meta_field_year">Yıl</string>
+    <string name="meta_field_track">Parça No</string>
+    <string name="meta_field_genre">Tür</string>
+    <string name="meta_field_composer">Besteci</string>
+    <string name="meta_field_comment">Açıklama</string>
+    <string name="meta_pick_cover">Kapak Resmi Seç</string>
+    <string name="meta_remove_cover">Kapağı Kaldır</string>
+    <string name="meta_save_tags_only">Etiketleri Doğrudan Güncelle</string>
+    <string name="meta_apply_session">Stüdyoda Güncelle</string>
+
+    <!-- Export -->
+    <string name="export_title">Sesi Dışa Aktar</string>
+    <string name="export_format">Çıktı Biçimi</string>
+    <string name="export_bitrate">Bit Hızı: %1$d kbps</string>
+    <string name="export_channels">Kanallar</string>
+    <string name="export_wav_depth">WAV Bit Derinliği</string>
+    <string name="export_lossless_copy">Yeniden kodlamadan kaydet</string>
+    <string name="export_estimated_size">Tahmini boyut: ~%1$s</string>
+    <string name="export_save_music">Music/LibreOpus Klasörüne Kaydet</string>
+    <string name="export_save_as">Farklı Kaydet…</string>
+    <string name="export_share">Paylaş</string>
+
+    <!-- Converter -->
+    <string name="converter_title">Toplu Format Dönüştürücü</string>
+    <string name="converter_subtitle">Çoklu ses dosyalarını çevrimdışı dönüştürün veya videolardan ses ayıklayın.</string>
+    <string name="converter_add_files">Ses / Video Dosyası Ekle</string>
+    <string name="converter_clear_queue">Listeyi Temizle</string>
+    <string name="converter_start">Tümünü Music/LibreOpus\'a Dönüştür</string>
+    <string name="converter_lufs_toggle">Ses Yüksekliği Normalize (-16 LUFS)</string>
+    <string name="converter_status_pending">Bekliyor</string>
+    <string name="converter_status_done">Tamamlandı</string>
+    <string name="converter_status_error">Hata</string>
+
+    <!-- Downloader (full flavor) -->
+    <string name="download_title">Medya İndirici</string>
+    <string name="download_subtitle">Hazır yt-dlp betikleriyle en iyi kalite ses veya kapak görseli indirin.</string>
+    <string name="download_url_hint">Bağlantı yapıştır (YouTube, SoundCloud, Bandcamp…)</string>
+    <string name="download_paste">Yapıştır</string>
+    <string name="download_clear">Temizle</string>
+    <string name="download_presets_label">Hazır Betikler</string>
+    <string name="download_preset_best_audio">En İyi Kalite Ses İndir</string>
+    <string name="download_preset_best_audio_desc">En yüksek kaliteli yerel ses akışını indirir</string>
+    <string name="download_preset_image_only">Sadece Resim İndir</string>
+    <string name="download_preset_image_only_desc">Yalnızca kapak / küçük resmi indirir</string>
+    <string name="download_preset_audio_image">En İyi Ses + Kapak Resmi</string>
+    <string name="download_preset_audio_image_desc">Ses ve kapak görselini indirip stüdyoya hazırlar</string>
+    <string name="download_preset_custom">Özel yt-dlp Betiği</string>
+    <string name="download_preset_custom_desc">Ham yt-dlp parametrelerini kendiniz düzenleyin</string>
+    <string name="download_custom_args_label">yt-dlp parametreleri</string>
+    <string name="download_command_preview">Betik bayrakları: %1$s</string>
+    <string name="download_start">İndir</string>
+    <string name="download_initializing">yt-dlp ortamı hazırlanıyor…</string>
+    <string name="download_eta">Kalan: %1$dsn</string>
+    <string name="download_open_in_editor">Düzenleyicide Aç</string>
+    <string name="download_set_as_cover">Parça Kapağı Yap</string>
+    <string name="download_saved_to">Kaydedildi: %1$s</string>
+    <string name="download_logs">Konsol Çıktısı</string>
+
+    <!-- Settings & About -->
+    <string name="settings_title">Ayarlar &amp; Hakkında</string>
+    <string name="settings_appearance">Görünüm</string>
+    <string name="settings_theme_mode">Tema Modu</string>
+    <string name="settings_theme_system">Sistem</string>
+    <string name="settings_theme_light">Açık</string>
+    <string name="settings_theme_dark">Koyu</string>
+    <string name="settings_amoled">AMOLED Saf Siyah</string>
+    <string name="settings_dynamic_color">Material You Dinamik Renk</string>
+    <string name="settings_language">Dil</string>
+    <string name="settings_lang_system">Sistem Varsayılanı</string>
+    <string name="settings_lang_en">English</string>
+    <string name="settings_lang_tr">Türkçe</string>
+    <string name="settings_defaults">Dışa Aktarma Varsayılanları</string>
+    <string name="settings_about">LibreOpus Hakkında</string>
+    <string name="settings_version">Sürüm %1$s (%2$s sürümü)</string>
+    <string name="settings_license_title">GNU Genel Kamu Lisansı v3.0</string>
+    <string name="settings_view_license">Tam GPLv3 Lisansını Oku</string>
+    <string name="settings_fdroid_note" formatted="false">%100 açık kaynaktan (GPLv3) derlenmiştir; izleyici ve kapalı ikili kod içermez.</string>
+
+    <!-- Processing -->
+    <string name="processing_applying">İşleniyor: %1$s…</string>
+</resources>

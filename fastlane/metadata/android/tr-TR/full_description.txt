@@ -1,0 +1,10 @@
+LibreOpus; Material You (Material 3 Expressive) tasarımlı, hafif ve %100 özgür (GPLv3) bir Android ses düzenleme stüdyosudur.
+
+Özellikler:
+- .opus, .ogg, .mp3, .m4a, .flac, .wav, .amr, .webm açma ve videolardan ses ayıklama
+- .opus, .ogg, .flac, .m4a ve .wav (16/24/32-bit float) dışa aktarma
+- Parmakla yakınlaştırmalı yüksek FPS dalga formu, milisaniye hassasiyetli seçim, A-B döngü oynatma ve canlı dBFS metre
+- Sınırsız Geri Al / İleri Al: Kırp, Kes, Böl, Sessizleştir, Kopyala/Yapıştır, Ekle ve Üst Üste Miksle
+- Stüdyo DSP Efektleri: Kazanç, Peak/LUFS Normalizasyon, 4 eğrili Fade, 7-Bant EQ, High/Low-Pass Filtre, Gürültü Kapısı, Sessizlik Kırpma, Bağımsız Tempo/Perde, Ters Çevir, Kanal İşlemleri
+- Toplu Format Dönüştürücü ve Etiket / Kapak Düzenleyici
+- İzleyici ve kapalı ikili kod içermez

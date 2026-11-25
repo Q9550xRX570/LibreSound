@@ -1,0 +1,1 @@
+İlk sürüm: kayıpsız .opus kesme ve etiketleme, Material You dalga formu stüdyosu, DSP efekt paketi, toplu dönüştürücü ve F-Droid tekrarlanabilir derleme desteği.

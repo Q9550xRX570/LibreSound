@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LibreOpus</string>
+    <string name="tagline">FOSS Audio Studio</string>
+
+    <!-- Navigation -->
+    <string name="nav_studio">Studio</string>
+    <string name="nav_editor">Editor</string>
+    <string name="nav_download">Download</string>
+    <string name="nav_converter">Converter</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Home -->
+    <string name="home_hero_title">Open Audio or Video</string>
+    <string name="home_hero_subtitle">Open and edit audio files or extract sound from videos directly on your device.</string>
+    <string name="home_pick_audio">Pick Audio File</string>
+    <string name="home_extract_video">Extract from Video</string>
+    <string name="home_quick_tools">Studio Tools</string>
+    <string name="home_tool_trim_edit">Trim &amp; Tags</string>
+    <string name="home_tool_trim_edit_desc">Cut audio, adjust levels, and edit tags</string>
+    <string name="home_tool_download">Media Downloader</string>
+    <string name="home_tool_download_desc">Save best-quality audio or cover images via yt-dlp</string>
+    <string name="home_tool_converter">Batch Converter</string>
+    <string name="home_tool_converter_desc">Convert multiple files or extract video audio</string>
+    <string name="home_recent_files">Recent Files</string>
+    <string name="home_recent_empty">No recent files yet. Pick any audio or video file to start.</string>
+    <string name="home_clear_recent">Clear</string>
+
+    <!-- Editor Top & Status -->
+    <string name="editor_undo">Undo</string>
+    <string name="editor_redo">Redo</string>
+    <string name="editor_export">Export</string>
+    <string name="editor_selection_range">Selection: %1$s – %2$s (%3$s)</string>
+    <string name="editor_select_all">Select All</string>
+    <string name="editor_zoom_in">Zoom In</string>
+    <string name="editor_zoom_out">Zoom Out</string>
+
+    <!-- Transport -->
+    <string name="transport_jump_start">Start</string>
+    <string name="transport_play">Play</string>
+    <string name="transport_pause">Pause</string>
+    <string name="transport_play_selection">Play Selection</string>
+    <string name="transport_loop_ab">A–B Loop</string>
+    <string name="transport_level">Level</string>
+
+    <!-- Bottom Tool Tabs -->
+    <string name="tab_edit">Edit</string>
+    <string name="tab_effects">Effects</string>
+    <string name="tab_tags">Tags</string>
+
+    <!-- Edit Actions -->
+    <string name="action_trim">Trim to Selection</string>
+    <string name="action_cut">Cut Selection</string>
+    <string name="action_split">Split at Cursor</string>
+    <string name="action_silence">Silence</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_paste">Paste</string>
+    <string name="action_append_file">Append File</string>
+    <string name="action_mix_overlay">Mix / Overlay</string>
+
+    <!-- DSP Effect Actions -->
+    <string name="effect_gain_norm">Gain &amp; Normalize</string>
+    <string name="effect_fade">Fade In / Out</string>
+    <string name="effect_eq">7-Band EQ</string>
+    <string name="effect_speed_pitch">Speed &amp; Pitch</string>
+    <string name="effect_filter_gate">Filter &amp; Gate</string>
+    <string name="effect_trim_silence">Trim Silence</string>
+    <string name="effect_reverse">Reverse</string>
+    <string name="effect_channels">Channels</string>
+
+    <!-- Effect Sheets -->
+    <string name="apply">Apply</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="gain_db_label">Gain (dB): %1$.1f dB</string>
+    <string name="norm_peak_button">Peak Normalize (-1.0 dBFS)</string>
+    <string name="norm_lufs_button">Loudness Normalize (%1$.0f LUFS)</string>
+    <string name="lufs_target_label">Target Loudness: %1$.0f LUFS</string>
+    <string name="fade_direction_in">Fade In</string>
+    <string name="fade_direction_out">Fade Out</string>
+    <string name="fade_curve_linear">Linear</string>
+    <string name="fade_curve_exp">Exponential</string>
+    <string name="fade_curve_log">Logarithmic</string>
+    <string name="fade_curve_scurve">S-Curve</string>
+    <string name="eq_presets">Presets</string>
+    <string name="speed_linked">Link Speed &amp; Pitch</string>
+    <string name="speed_tempo_label">Tempo: %1$.2fx</string>
+    <string name="speed_pitch_label">Pitch: %1$+.1f st</string>
+    <string name="filter_hp_label">High-Pass Cutoff: %1$d Hz</string>
+    <string name="filter_lp_label">Low-Pass Cutoff: %1$d Hz</string>
+    <string name="filter_enable_hp">Enable High-Pass</string>
+    <string name="filter_enable_lp">Enable Low-Pass</string>
+    <string name="gate_enable">Apply Noise Gate</string>
+    <string name="gate_threshold_label">Gate Threshold: %1$.0f dBFS</string>
+    <string name="silence_thresh_label">Silence Threshold: %1$.0f dBFS</string>
+    <string name="silence_min_ms_label">Min Silence Duration: %1$d ms</string>
+    <string name="channel_to_mono_mix">Stereo → Mono (Mix)</string>
+    <string name="channel_to_mono_left">Keep Left Channel (Mono)</string>
+    <string name="channel_to_mono_right">Keep Right Channel (Mono)</string>
+    <string name="channel_swap_lr">Swap Left &amp; Right</string>
+    <string name="channel_mono_to_stereo">Mono → Stereo</string>
+
+    <!-- Metadata -->
+    <string name="meta_title">Metadata &amp; Cover Art</string>
+    <string name="meta_field_title">Title</string>
+    <string name="meta_field_artist">Artist</string>
+    <string name="meta_field_album">Album</string>
+    <string name="meta_field_album_artist">Album Artist</string>
+    <string name="meta_field_year">Year</string>
+    <string name="meta_field_track">Track #</string>
+    <string name="meta_field_genre">Genre</string>
+    <string name="meta_field_composer">Composer</string>
+    <string name="meta_field_comment">Comment</string>
+    <string name="meta_pick_cover">Choose Cover Image</string>
+    <string name="meta_remove_cover">Remove Cover</string>
+    <string name="meta_save_tags_only">Update Tags Directly</string>
+    <string name="meta_apply_session">Update in Studio</string>
+
+    <!-- Export -->
+    <string name="export_title">Export Audio</string>
+    <string name="export_format">Output Format</string>
+    <string name="export_bitrate">Bitrate: %1$d kbps</string>
+    <string name="export_channels">Channels</string>
+    <string name="export_wav_depth">WAV Bit Depth</string>
+    <string name="export_lossless_copy">Save without re-encoding</string>
+    <string name="export_estimated_size">Estimated size: ~%1$s</string>
+    <string name="export_save_music">Save to Music/LibreOpus</string>
+    <string name="export_save_as">Save As…</string>
+    <string name="export_share">Share</string>
+
+    <!-- Converter -->
+    <string name="converter_title">Batch Format Converter</string>
+    <string name="converter_subtitle">Convert multiple audio files or extract audio from video clips offline.</string>
+    <string name="converter_add_files">Add Audio / Video Files</string>
+    <string name="converter_clear_queue">Clear Queue</string>
+    <string name="converter_start">Convert All to Music/LibreOpus</string>
+    <string name="converter_lufs_toggle">Normalize Loudness (-16 LUFS)</string>
+    <string name="converter_status_pending">Pending</string>
+    <string name="converter_status_done">Done</string>
+    <string name="converter_status_error">Error</string>
+
+    <!-- Downloader (full flavor) -->
+    <string name="download_title">Media Downloader</string>
+    <string name="download_subtitle">Download best-quality audio or cover images using ready-made yt-dlp presets.</string>
+    <string name="download_url_hint">Paste media URL (YouTube, SoundCloud, Bandcamp…)</string>
+    <string name="download_paste">Paste</string>
+    <string name="download_clear">Clear</string>
+    <string name="download_presets_label">Ready-Made Presets</string>
+    <string name="download_preset_best_audio">Best Audio Quality</string>
+    <string name="download_preset_best_audio_desc">Highest-quality native audio stream</string>
+    <string name="download_preset_image_only">Image / Cover Only</string>
+    <string name="download_preset_image_only_desc">Downloads only the thumbnail/artwork image</string>
+    <string name="download_preset_audio_image">Best Audio + Cover Image</string>
+    <string name="download_preset_audio_image_desc">Downloads both audio and cover for immediate editing</string>
+    <string name="download_preset_custom">Custom yt-dlp Script</string>
+    <string name="download_preset_custom_desc">Edit raw yt-dlp CLI flags yourself</string>
+    <string name="download_custom_args_label">yt-dlp arguments</string>
+    <string name="download_command_preview">Preset flags: %1$s</string>
+    <string name="download_start">Download</string>
+    <string name="download_initializing">Preparing yt-dlp runtime…</string>
+    <string name="download_eta">ETA: %1$ds</string>
+    <string name="download_open_in_editor">Open in Editor</string>
+    <string name="download_set_as_cover">Use as Track Cover</string>
+    <string name="download_saved_to">Saved: %1$s</string>
+    <string name="download_logs">Console Output</string>
+
+    <!-- Settings & About -->
+    <string name="settings_title">Settings &amp; About</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme_mode">Theme Mode</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_amoled">AMOLED Pure Black</string>
+    <string name="settings_dynamic_color">Material You Dynamic Color</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_lang_system">System Default</string>
+    <string name="settings_lang_en">English</string>
+    <string name="settings_lang_tr">Türkçe</string>
+    <string name="settings_defaults">Export Defaults</string>
+    <string name="settings_about">About LibreOpus</string>
+    <string name="settings_version">Version %1$s (%2$s edition)</string>
+    <string name="settings_license_title">GNU General Public License v3.0</string>
+    <string name="settings_view_license">Read Full GPLv3 License</string>
+    <string name="settings_fdroid_note" formatted="false">Built 100% from open source (GPLv3) with zero trackers and zero proprietary blobs.</string>
+
+    <!-- Processing -->
+    <string name="processing_applying">Processing: %1$s…</string>
+</resources>

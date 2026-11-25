@@ -1,0 +1,10 @@
+LibreOpus is a lightweight, 100% open-source (GPLv3), offline-first audio studio for Android with Material You (Material 3 Expressive) design.
+
+Features:
+- Open & edit .opus, .ogg, .mp3, .m4a, .flac, .wav, .amr, .webm, or extract audio from video files
+- Export to .opus, .ogg, .flac, .m4a (AAC), or .wav (16/24/32-bit float), including direct save without re-encoding for trimmed .opus files
+- Pinch-to-zoom waveform timeline with millisecond handles, A-B loop playback, and live dBFS meter
+- Unlimited non-destructive Undo/Redo: Trim, Cut, Split, Silence, Copy/Paste, Append & Mix/Overlay
+- Studio DSP: Gain, Peak & LUFS Loudness Normalization, 4-curve Fade In/Out, 7-Band EQ, High/Low-Pass Filters, Noise Gate, Smart Silence Trimmer, Independent Tempo & Pitch (WSOLA), Reverse, Channel Tools
+- Batch Format Converter & Metadata / Cover Art Editor
+- Zero trackers, zero proprietary blobs
