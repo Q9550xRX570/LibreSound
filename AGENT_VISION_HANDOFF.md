@@ -1,6 +1,7 @@
 # LibreOpus — Architectural Vision & Agent Handoff Brief
 
-> **Target Audience:** Antigravity agents picking up **LibreOpus** on another workstation.
+> **Target Audience:** Antigravity agents picking up **LibreOpus** (`LibreSound` test repo) on another workstation.
+> **Workspace Priority (Test Repo):** This repository is a live test & mobile vibe-coding workspace. Focus on the **working Android app, features, APK builds, and tests** — do not spend turns polishing `README.md`, store copy, or ancillary documentation unless explicitly requested.
 > **Language Note:** The user communicates primarily in **Turkish** (`tr`), and the app maintains full bilingual parity (`values/` English + `values-tr/` Turkish).
 
 ---
