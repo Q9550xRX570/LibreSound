@@ -398,6 +398,32 @@ private fun LibreOpusAppContent(
                     state = converterState,
                     viewModel = converterVm,
                     onAddFiles = { batchPicker.launch(arrayOf("audio/*", "application/ogg", "video/*")) },
+                    onOpenConvertedUri = { uri ->
+                        val readable = runCatching {
+                            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { } != null
+                        }.getOrDefault(false)
+                        if (readable) {
+                            currentTab = TopTab.EDITOR
+                            editorVm.openUri(uri)
+                        } else {
+                            scope.launch {
+                                snackbarHostState.showSnackbar(missingFileMsg)
+                            }
+                        }
+                    },
+                    onShareConvertedUri = { uri, mime ->
+                        val readable = runCatching {
+                            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { } != null
+                        }.getOrDefault(false)
+                        if (readable) {
+                            val shareIntent = MediaStorageHelper.createShareUriIntent(context, uri, mime)
+                            context.startActivity(Intent.createChooser(shareIntent, shareTitle))
+                        } else {
+                            scope.launch {
+                                snackbarHostState.showSnackbar(missingFileMsg)
+                            }
+                        }
+                    },
                     modifier = Modifier.padding(innerPadding),
                 )
                 TopTab.SETTINGS -> SettingsScreen(

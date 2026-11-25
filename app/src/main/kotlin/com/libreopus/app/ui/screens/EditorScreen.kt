@@ -96,6 +96,7 @@ import com.libreopus.app.ui.sheets.SpeedPitchSheet
 import com.libreopus.app.ui.sheets.SplitOptionsSheet
 import com.libreopus.app.viewmodel.EditorUiState
 import com.libreopus.app.viewmodel.EditorViewModel
+import com.libreopus.app.viewmodel.TrimMarkerTarget
 import com.libreopus.audio.api.AudioContainerFormat
 import com.libreopus.audio.api.ExportConfig
 import com.libreopus.audio.api.ExportFormat
@@ -126,6 +127,7 @@ fun EditorScreen(
     var scrollFrac by remember { mutableFloatStateOf(0f) }
     var activeTab by remember { mutableIntStateOf(0) }
     var activeSheet by remember { mutableStateOf(ActiveSheet.NONE) }
+    var nudgeTarget by remember { mutableStateOf(TrimMarkerTarget.START) }
 
     val info = state.info
 
@@ -157,11 +159,15 @@ fun EditorScreen(
                     }
                 },
                 actions = {
+                    val undoCd = state.undoLabel?.let { stringResource(R.string.editor_undo_label, it) }
+                        ?: stringResource(R.string.editor_undo)
+                    val redoCd = state.redoLabel?.let { stringResource(R.string.editor_redo_label, it) }
+                        ?: stringResource(R.string.editor_redo)
                     IconButton(onClick = { viewModel.undo() }, enabled = state.canUndo) {
-                        Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = stringResource(R.string.editor_undo))
+                        Icon(Icons.AutoMirrored.Rounded.Undo, contentDescription = undoCd)
                     }
                     IconButton(onClick = { viewModel.redo() }, enabled = state.canRedo) {
-                        Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = stringResource(R.string.editor_redo))
+                        Icon(Icons.AutoMirrored.Rounded.Redo, contentDescription = redoCd)
                     }
                     FilledTonalButton(
                         onClick = { activeSheet = ActiveSheet.EXPORT },
@@ -231,6 +237,59 @@ fun EditorScreen(
                         IconButton(onClick = { zoom = (zoom * 1.5f).coerceAtMost(64f) }) {
                             Icon(Icons.Rounded.ZoomIn, contentDescription = stringResource(R.string.editor_zoom_in))
                         }
+                    }
+                }
+
+                // Mobile Fine Marker Nudge (±100 ms) & Undo/Redo Action Hint
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilterChip(
+                        selected = nudgeTarget == TrimMarkerTarget.START,
+                        onClick = { nudgeTarget = TrimMarkerTarget.START },
+                        label = { Text(stringResource(R.string.nudge_start)) },
+                    )
+                    FilterChip(
+                        selected = nudgeTarget == TrimMarkerTarget.CURSOR,
+                        onClick = { nudgeTarget = TrimMarkerTarget.CURSOR },
+                        label = { Text(stringResource(R.string.nudge_cursor)) },
+                    )
+                    FilterChip(
+                        selected = nudgeTarget == TrimMarkerTarget.END,
+                        onClick = { nudgeTarget = TrimMarkerTarget.END },
+                        label = { Text(stringResource(R.string.nudge_end)) },
+                    )
+                    AssistChip(
+                        onClick = { viewModel.nudgeMarker(nudgeTarget, -100L) },
+                        label = { Text(stringResource(R.string.nudge_minus_100ms)) },
+                    )
+                    AssistChip(
+                        onClick = { viewModel.nudgeMarker(nudgeTarget, 100L) },
+                        label = { Text(stringResource(R.string.nudge_plus_100ms)) },
+                    )
+                }
+
+                if (state.canUndo || state.canRedo) {
+                    val hintParts = buildList {
+                        if (state.canUndo && !state.undoLabel.isNullOrBlank()) {
+                            add(stringResource(R.string.editor_undo_label, state.undoLabel))
+                        }
+                        if (state.canRedo && !state.redoLabel.isNullOrBlank()) {
+                            add(stringResource(R.string.editor_redo_label, state.redoLabel))
+                        }
+                    }
+                    if (hintParts.isNotEmpty()) {
+                        Text(
+                            text = hintParts.joinToString(" • "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
 
@@ -423,6 +482,10 @@ fun EditorScreen(
             onApplyGain = { viewModel.applyGain(it) },
             onNormalizePeak = { viewModel.normalizePeak(it) },
             onNormalizeLufs = { viewModel.normalizeLufs(it) },
+            isPlaying = state.isPlaying,
+            onTogglePreview = { viewModel.toggleEffectPreviewPlayback() },
+            onLiveDspChange = { viewModel.updateLiveDspPreview(it) },
+            onStopPreview = { viewModel.stopEffectPreview() },
         )
         ActiveSheet.FADE -> FadeSheet(
             onDismiss = { activeSheet = ActiveSheet.NONE },
@@ -431,15 +494,29 @@ fun EditorScreen(
         ActiveSheet.EQ -> EqualizerSheet(
             onDismiss = { activeSheet = ActiveSheet.NONE },
             onApplyEq = { viewModel.applyEq(it) },
+            isPlaying = state.isPlaying,
+            onTogglePreview = { viewModel.toggleEffectPreviewPlayback() },
+            onLiveDspChange = { viewModel.updateLiveDspPreview(it) },
+            onStopPreview = { viewModel.stopEffectPreview() },
         )
         ActiveSheet.SPEED_PITCH -> SpeedPitchSheet(
             onDismiss = { activeSheet = ActiveSheet.NONE },
             onApply = { tempo, pitch, linked -> viewModel.applySpeedAndPitch(tempo, pitch, linked) },
+            isPlaying = state.isPlaying,
+            onTogglePreview = { viewModel.toggleEffectPreviewPlayback() },
+            onLiveSpeedPitchChange = { tempo, pitch, linked, bypass ->
+                viewModel.updateLiveSpeedPitchPreview(tempo, pitch, linked, bypass)
+            },
+            onStopPreview = { viewModel.stopEffectPreview() },
         )
         ActiveSheet.FILTER_GATE -> FilterGateSheet(
             onDismiss = { activeSheet = ActiveSheet.NONE },
             onApplyFilterGate = { hp, lp, gate, gateDb -> viewModel.applyFilterAndGate(hp, lp, gate, gateDb) },
             onTrimSilence = { threshDb, minMs -> viewModel.trimSilence(threshDb, minMs) },
+            isPlaying = state.isPlaying,
+            onTogglePreview = { viewModel.toggleEffectPreviewPlayback() },
+            onLiveDspChange = { viewModel.updateLiveDspPreview(it) },
+            onStopPreview = { viewModel.stopEffectPreview() },
         )
         ActiveSheet.CHANNELS -> ChannelSheet(
             onDismiss = { activeSheet = ActiveSheet.NONE },

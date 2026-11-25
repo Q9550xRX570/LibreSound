@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.libreopus.dsp.effects
 
+import com.libreopus.audio.api.PcmTimelineReader
 import com.libreopus.dsp.storage.DiskPcmStore
 import com.libreopus.dsp.storage.EditTimeline
 import java.io.BufferedOutputStream
@@ -9,6 +10,7 @@ import kotlin.coroutines.coroutineContext
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -63,12 +65,84 @@ object HermiteResampler {
         return out
     }
 
-    private fun hermite4(y0: Float, y1: Float, y2: Float, y3: Float, mu: Float): Float {
+    internal fun hermite4(y0: Float, y1: Float, y2: Float, y3: Float, mu: Float): Float {
         val c0 = y1
         val c1 = 0.5f * (y2 - y0)
         val c2 = y0 - 2.5f * y1 + 2f * y2 - 0.5f * y3
         val c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2)
         return ((c3 * mu + c2) * mu + c1) * mu + c0
+    }
+}
+
+/**
+ * Streaming phase-continuous cubic Hermite resampler wrapping any [PcmTimelineReader].
+ */
+class ResamplingTimelineReader(
+    private val delegate: PcmTimelineReader,
+    override val sampleRate: Int,
+) : PcmTimelineReader {
+    override val channels: Int get() = delegate.channels
+
+    private val srcRate = delegate.sampleRate.coerceAtLeast(1)
+    private val srcTotalFrames = delegate.totalFrames.coerceAtLeast(0L)
+
+    override val totalFrames: Long = if (srcTotalFrames <= 0L) {
+        0L
+    } else if (sampleRate == srcRate) {
+        srcTotalFrames
+    } else {
+        ((srcTotalFrames.toDouble() * sampleRate) / srcRate).toLong().coerceAtLeast(1L)
+    }
+
+    override fun readFrames(
+        startFrame: Long,
+        destInterleaved16: ShortArray,
+        frameOffset: Int,
+        frameCount: Int,
+    ): Int {
+        if (frameCount <= 0 || startFrame < 0L || startFrame >= totalFrames || srcTotalFrames <= 0L) {
+            return 0
+        }
+        if (sampleRate == srcRate) {
+            return delegate.readFrames(startFrame, destInterleaved16, frameOffset, frameCount)
+        }
+
+        val actualOut = min(frameCount.toLong(), totalFrames - startFrame).toInt()
+        if (actualOut <= 0) return 0
+
+        val step = srcRate.toDouble() / sampleRate.toDouble()
+        val firstSrc = startFrame * step
+        val lastSrc = (startFrame + actualOut - 1) * step
+        val readStart = (floor(firstSrc).toLong() - 1L).coerceIn(0L, srcTotalFrames - 1L)
+        val readEndExclusive = (floor(lastSrc).toLong() + 3L).coerceIn(readStart + 1L, srcTotalFrames)
+        val srcNeed = (readEndExclusive - readStart).toInt()
+
+        val ch = channels.coerceAtLeast(1)
+        val srcShorts = ShortArray(srcNeed * ch)
+        val got = delegate.readFrames(readStart, srcShorts, 0, srcNeed)
+        if (got <= 0) return 0
+
+        val destBase = frameOffset * ch
+        for (outIdx in 0 until actualOut) {
+            val globalPos = (startFrame + outIdx) * step
+            val localPos = globalPos - readStart
+            val i1 = localPos.toInt().coerceIn(0, got - 1)
+            val mu = (localPos - i1).toFloat().coerceIn(0f, 1f)
+            val i0 = max(0, i1 - 1)
+            val i2 = min(got - 1, i1 + 1)
+            val i3 = min(got - 1, i1 + 2)
+
+            val outSampleOffset = destBase + outIdx * ch
+            for (c in 0 until ch) {
+                val y0 = srcShorts[i0 * ch + c] / 32768f
+                val y1 = srcShorts[i1 * ch + c] / 32768f
+                val y2 = srcShorts[i2 * ch + c] / 32768f
+                val y3 = srcShorts[i3 * ch + c] / 32768f
+                destInterleaved16[outSampleOffset + c] =
+                    SoftClipLimiter.floatToPcm16(HermiteResampler.hermite4(y0, y1, y2, y3, mu))
+            }
+        }
+        return actualOut
     }
 }
 

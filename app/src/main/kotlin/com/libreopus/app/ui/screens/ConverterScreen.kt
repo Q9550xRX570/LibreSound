@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.libreopus.app.ui.screens
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -21,6 +22,8 @@ import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
@@ -34,6 +37,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,7 +48,9 @@ import com.libreopus.app.R
 import com.libreopus.app.viewmodel.ConverterUiState
 import com.libreopus.app.viewmodel.ConverterViewModel
 import com.libreopus.app.viewmodel.QueueItemStatus
+import com.libreopus.audio.api.ChannelMode
 import com.libreopus.audio.api.ExportFormat
+import com.libreopus.audio.api.WavBitDepth
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -54,6 +60,8 @@ fun ConverterScreen(
     viewModel: ConverterViewModel,
     onAddFiles: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenConvertedUri: (Uri) -> Unit = {},
+    onShareConvertedUri: (Uri, String) -> Unit = { _, _ -> },
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -88,11 +96,70 @@ fun ConverterScreen(
 
                     if (state.targetFormat.supportsBitrate) {
                         Text(stringResource(R.string.export_bitrate, state.bitrateKbps))
+                        @Suppress("DEPRECATION")
                         Slider(
                             value = state.bitrateKbps.toFloat(),
                             onValueChange = { if (!state.isRunning) viewModel.updateConfig(bitrateKbps = (it / 8f).roundToInt() * 8) },
                             valueRange = 24f..320f,
                         )
+                    }
+
+                    Text(stringResource(R.string.converter_channels_label), style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val channelOptions = listOf(
+                            ChannelMode.KEEP to R.string.converter_channel_keep,
+                            ChannelMode.MONO to R.string.converter_channel_mono,
+                            ChannelMode.STEREO to R.string.converter_channel_stereo,
+                        )
+                        channelOptions.forEach { (mode, labelRes) ->
+                            FilterChip(
+                                selected = state.channelMode == mode,
+                                onClick = { if (!state.isRunning) viewModel.updateConfig(channelMode = mode) },
+                                label = { Text(stringResource(labelRes)) },
+                            )
+                        }
+                    }
+
+                    val isOpus = state.targetFormat == ExportFormat.OPUS || state.targetFormat == ExportFormat.OGG_OPUS
+                    Text(stringResource(R.string.converter_samplerate_label), style = MaterialTheme.typography.labelLarge)
+                    if (isOpus) {
+                        Text(
+                            text = stringResource(R.string.converter_samplerate_opus_note),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        val sampleRates = listOf(0, 16_000, 44_100, 48_000)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            sampleRates.forEach { hz ->
+                                val label = when (hz) {
+                                    0 -> stringResource(R.string.converter_samplerate_original)
+                                    16_000 -> "16 kHz"
+                                    44_100 -> "44.1 kHz"
+                                    48_000 -> "48 kHz"
+                                    else -> "$hz Hz"
+                                }
+                                FilterChip(
+                                    selected = state.sampleRateHz == hz,
+                                    onClick = { if (!state.isRunning) viewModel.updateConfig(sampleRateHz = hz) },
+                                    label = { Text(label) },
+                                )
+                            }
+                        }
+                    }
+
+                    if (state.targetFormat == ExportFormat.WAV) {
+                        Text(stringResource(R.string.converter_wav_depth_label), style = MaterialTheme.typography.labelLarge)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            WavBitDepth.entries.forEach { depth ->
+                                val label = if (depth.isFloat) "32-bit Float" else "${depth.bits}-bit PCM"
+                                FilterChip(
+                                    selected = state.wavBitDepth == depth,
+                                    onClick = { if (!state.isRunning) viewModel.updateConfig(wavBitDepth = depth) },
+                                    label = { Text(label) },
+                                )
+                            }
+                        }
                     }
 
                     Row(
@@ -188,6 +255,35 @@ fun ConverterScreen(
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp),
                         )
+                    }
+                    val outUri = item.outputContentUri
+                    val outMime = item.outputMimeType ?: "audio/*"
+                    if (item.status == QueueItemStatus.DONE && outUri != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            TextButton(onClick = { onOpenConvertedUri(outUri) }) {
+                                Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    stringResource(R.string.download_open_in_editor),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            TextButton(onClick = { onShareConvertedUri(outUri, outMime) }) {
+                                Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    stringResource(R.string.export_share),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -298,4 +298,28 @@
     <string name="download_history_refill">Reuse URL</string>
     <string name="download_history_delete">Remove from history</string>
     <string name="download_history_file_missing">Saved file is no longer accessible</string>
+
+    <!-- Live DSP Preview & Fine Selection -->
+    <string name="preview_start">Preview</string>
+    <string name="preview_stop">Stop</string>
+    <string name="preview_ab_effect">Effect (B)</string>
+    <string name="preview_ab_original">Original (A)</string>
+    <string name="preview_speed_pitch_note">Live auditioning uses system pitch; Apply runs full WSOLA</string>
+    <string name="nudge_start">Start</string>
+    <string name="nudge_cursor">Cursor</string>
+    <string name="nudge_end">End</string>
+    <string name="nudge_minus_100ms">-0.1s</string>
+    <string name="nudge_plus_100ms">+0.1s</string>
+    <string name="editor_undo_label">Undo: %1$s</string>
+    <string name="editor_redo_label">Redo: %1$s</string>
+
+    <!-- Batch Converter Options -->
+    <string name="converter_channels_label">Channels</string>
+    <string name="converter_channel_keep">Original</string>
+    <string name="converter_channel_mono">Mono</string>
+    <string name="converter_channel_stereo">Stereo</string>
+    <string name="converter_samplerate_label">Sample Rate</string>
+    <string name="converter_samplerate_original">Original</string>
+    <string name="converter_samplerate_opus_note">Opus always encodes at standard 48 kHz</string>
+    <string name="converter_wav_depth_label">WAV Bit Depth</string>
 </resources>

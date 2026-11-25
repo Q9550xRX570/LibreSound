@@ -12,22 +12,30 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -51,9 +59,70 @@ import com.libreopus.dsp.effects.EqPreset
 import com.libreopus.dsp.effects.EqualizerProcessor
 import com.libreopus.dsp.effects.FadeCurve
 import com.libreopus.dsp.effects.FadeProcessor
+import com.libreopus.dsp.effects.LiveDspConfig
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+
+@Composable
+private fun LivePreviewBar(
+    isPlaying: Boolean,
+    isBypassed: Boolean,
+    onTogglePlay: () -> Unit,
+    onToggleBypass: () -> Unit,
+    note: String? = null,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilledTonalButton(
+                    onClick = onTogglePlay,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        stringResource(if (isPlaying) R.string.preview_stop else R.string.preview_start),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                FilterChip(
+                    selected = !isBypassed,
+                    onClick = onToggleBypass,
+                    label = {
+                        Text(
+                            stringResource(if (isBypassed) R.string.preview_ab_original else R.string.preview_ab_effect),
+                            maxLines = 1,
+                        )
+                    },
+                )
+            }
+            if (!note.isNullOrBlank()) {
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,11 +131,23 @@ fun GainNormalizeSheet(
     onApplyGain: (Float) -> Unit,
     onNormalizePeak: (Float) -> Unit,
     onNormalizeLufs: (Float) -> Unit,
+    isPlaying: Boolean = false,
+    onTogglePreview: () -> Unit = {},
+    onLiveDspChange: (LiveDspConfig) -> Unit = {},
+    onStopPreview: () -> Unit = {},
 ) {
     var gainDb by remember { mutableFloatStateOf(0f) }
     var targetLufs by remember { mutableFloatStateOf(-14f) }
+    var isBypassed by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    LaunchedEffect(gainDb, isBypassed) {
+        onLiveDspChange(LiveDspConfig(gainDb = gainDb, bypass = isBypassed))
+    }
+    DisposableEffect(Unit) {
+        onDispose { onStopPreview() }
+    }
+
+    ModalBottomSheet(onDismissRequest = { onStopPreview(); onDismiss() }) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -75,10 +156,17 @@ fun GainNormalizeSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(stringResource(R.string.effect_gain_norm), style = MaterialTheme.typography.headlineSmall)
+            LivePreviewBar(
+                isPlaying = isPlaying,
+                isBypassed = isBypassed,
+                onTogglePlay = onTogglePreview,
+                onToggleBypass = { isBypassed = !isBypassed },
+            )
             Text(stringResource(R.string.gain_db_label, gainDb))
+            @Suppress("DEPRECATION")
             Slider(value = gainDb, onValueChange = { gainDb = it }, valueRange = -24f..24f)
             Button(
-                onClick = { onApplyGain(gainDb); onDismiss() },
+                onClick = { onStopPreview(); onApplyGain(gainDb); onDismiss() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.apply))
@@ -86,16 +174,17 @@ fun GainNormalizeSheet(
 
             Spacer(Modifier.height(4.dp))
             FilledTonalButton(
-                onClick = { onNormalizePeak(-1.0f); onDismiss() },
+                onClick = { onStopPreview(); onNormalizePeak(-1.0f); onDismiss() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.norm_peak_button))
             }
 
             Text(stringResource(R.string.lufs_target_label, targetLufs))
+            @Suppress("DEPRECATION")
             Slider(value = targetLufs, onValueChange = { targetLufs = it.roundToInt().toFloat() }, valueRange = -24f..-9f)
             FilledTonalButton(
-                onClick = { onNormalizeLufs(targetLufs); onDismiss() },
+                onClick = { onStopPreview(); onNormalizeLufs(targetLufs); onDismiss() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.norm_lufs_button, targetLufs))
@@ -185,11 +274,24 @@ fun FadeSheet(
 fun EqualizerSheet(
     onDismiss: () -> Unit,
     onApplyEq: (List<Float>) -> Unit,
+    isPlaying: Boolean = false,
+    onTogglePreview: () -> Unit = {},
+    onLiveDspChange: (LiveDspConfig) -> Unit = {},
+    onStopPreview: () -> Unit = {},
 ) {
     val bands = remember { mutableStateListOf(0f, 0f, 0f, 0f, 0f, 0f, 0f) }
     val freqs = EqualizerProcessor.BAND_FREQUENCIES_HZ
+    var isBypassed by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val snapshotBands = bands.toList()
+    LaunchedEffect(snapshotBands, isBypassed) {
+        onLiveDspChange(LiveDspConfig(eqBandsDb = snapshotBands, bypass = isBypassed))
+    }
+    DisposableEffect(Unit) {
+        onDispose { onStopPreview() }
+    }
+
+    ModalBottomSheet(onDismissRequest = { onStopPreview(); onDismiss() }) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -199,6 +301,12 @@ fun EqualizerSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(stringResource(R.string.effect_eq), style = MaterialTheme.typography.headlineSmall)
+            LivePreviewBar(
+                isPlaying = isPlaying,
+                isBypassed = isBypassed,
+                onTogglePlay = onTogglePreview,
+                onToggleBypass = { isBypassed = !isBypassed },
+            )
             Text(stringResource(R.string.eq_presets), style = MaterialTheme.typography.labelLarge)
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -219,6 +327,7 @@ fun EqualizerSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(label, modifier = Modifier.width(64.dp), style = MaterialTheme.typography.labelMedium)
+                    @Suppress("DEPRECATION")
                     Slider(
                         value = bands[idx],
                         onValueChange = { bands[idx] = it },
@@ -229,7 +338,7 @@ fun EqualizerSheet(
                 }
             }
             Button(
-                onClick = { onApplyEq(bands.toList()); onDismiss() },
+                onClick = { onStopPreview(); onApplyEq(bands.toList()); onDismiss() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.apply))
@@ -243,12 +352,24 @@ fun EqualizerSheet(
 fun SpeedPitchSheet(
     onDismiss: () -> Unit,
     onApply: (tempo: Float, pitchSemitones: Float, linked: Boolean) -> Unit,
+    isPlaying: Boolean = false,
+    onTogglePreview: () -> Unit = {},
+    onLiveSpeedPitchChange: (tempo: Float, pitchSemitones: Float, linked: Boolean, bypass: Boolean) -> Unit = { _, _, _, _ -> },
+    onStopPreview: () -> Unit = {},
 ) {
     var linked by remember { mutableStateOf(false) }
     var tempo by remember { mutableFloatStateOf(1.0f) }
     var pitch by remember { mutableFloatStateOf(0f) }
+    var isBypassed by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    LaunchedEffect(tempo, pitch, linked, isBypassed) {
+        onLiveSpeedPitchChange(tempo, pitch, linked, isBypassed)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onStopPreview() }
+    }
+
+    ModalBottomSheet(onDismissRequest = { onStopPreview(); onDismiss() }) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -257,6 +378,13 @@ fun SpeedPitchSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(stringResource(R.string.effect_speed_pitch), style = MaterialTheme.typography.headlineSmall)
+            LivePreviewBar(
+                isPlaying = isPlaying,
+                isBypassed = isBypassed,
+                onTogglePlay = onTogglePreview,
+                onToggleBypass = { isBypassed = !isBypassed },
+                note = if (!linked) stringResource(R.string.preview_speed_pitch_note) else null,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -266,13 +394,15 @@ fun SpeedPitchSheet(
                 Switch(checked = linked, onCheckedChange = { linked = it })
             }
             Text(stringResource(R.string.speed_tempo_label, tempo))
+            @Suppress("DEPRECATION")
             Slider(value = tempo, onValueChange = { tempo = (it * 20f).roundToInt() / 20f }, valueRange = 0.5f..2.0f)
             if (!linked) {
                 Text(stringResource(R.string.speed_pitch_label, pitch))
+                @Suppress("DEPRECATION")
                 Slider(value = pitch, onValueChange = { pitch = it.roundToInt().toFloat() }, valueRange = -12f..12f)
             }
             Button(
-                onClick = { onApply(tempo, pitch, linked); onDismiss() },
+                onClick = { onStopPreview(); onApply(tempo, pitch, linked); onDismiss() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.apply))
@@ -287,6 +417,10 @@ fun FilterGateSheet(
     onDismiss: () -> Unit,
     onApplyFilterGate: (hpHz: Float?, lpHz: Float?, gate: Boolean, gateDb: Float) -> Unit,
     onTrimSilence: (threshDb: Float, minMs: Int) -> Unit,
+    isPlaying: Boolean = false,
+    onTogglePreview: () -> Unit = {},
+    onLiveDspChange: (LiveDspConfig) -> Unit = {},
+    onStopPreview: () -> Unit = {},
 ) {
     var enableHp by remember { mutableStateOf(true) }
     var hpHz by remember { mutableFloatStateOf(80f) }
@@ -296,8 +430,24 @@ fun FilterGateSheet(
     var gateDb by remember { mutableFloatStateOf(-40f) }
     var silenceDb by remember { mutableFloatStateOf(-42f) }
     var silenceMinMs by remember { mutableIntStateOf(350) }
+    var isBypassed by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    LaunchedEffect(enableHp, hpHz, enableLp, lpHz, enableGate, gateDb, isBypassed) {
+        onLiveDspChange(
+            LiveDspConfig(
+                highPassHz = if (enableHp) hpHz else null,
+                lowPassHz = if (enableLp) lpHz else null,
+                gateEnabled = enableGate,
+                gateThresholdDb = gateDb,
+                bypass = isBypassed,
+            ),
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose { onStopPreview() }
+    }
+
+    ModalBottomSheet(onDismissRequest = { onStopPreview(); onDismiss() }) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -307,6 +457,12 @@ fun FilterGateSheet(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(stringResource(R.string.effect_filter_gate), style = MaterialTheme.typography.headlineSmall)
+            LivePreviewBar(
+                isPlaying = isPlaying,
+                isBypassed = isBypassed,
+                onTogglePlay = onTogglePreview,
+                onToggleBypass = { isBypassed = !isBypassed },
+            )
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.filter_enable_hp))
@@ -314,6 +470,7 @@ fun FilterGateSheet(
             }
             if (enableHp) {
                 Text(stringResource(R.string.filter_hp_label, hpHz.roundToInt()))
+                @Suppress("DEPRECATION")
                 Slider(value = hpHz, onValueChange = { hpHz = it }, valueRange = 30f..1000f)
             }
 
@@ -323,6 +480,7 @@ fun FilterGateSheet(
             }
             if (enableLp) {
                 Text(stringResource(R.string.filter_lp_label, lpHz.roundToInt()))
+                @Suppress("DEPRECATION")
                 Slider(value = lpHz, onValueChange = { lpHz = it }, valueRange = 1500f..18000f)
             }
 
@@ -332,11 +490,13 @@ fun FilterGateSheet(
             }
             if (enableGate) {
                 Text(stringResource(R.string.gate_threshold_label, gateDb))
+                @Suppress("DEPRECATION")
                 Slider(value = gateDb, onValueChange = { gateDb = it.roundToInt().toFloat() }, valueRange = -65f..-15f)
             }
 
             Button(
                 onClick = {
+                    onStopPreview()
                     onApplyFilterGate(
                         if (enableHp) hpHz else null,
                         if (enableLp) lpHz else null,
@@ -353,11 +513,13 @@ fun FilterGateSheet(
             Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.effect_trim_silence), style = MaterialTheme.typography.titleMedium)
             Text(stringResource(R.string.silence_thresh_label, silenceDb))
+            @Suppress("DEPRECATION")
             Slider(value = silenceDb, onValueChange = { silenceDb = it.roundToInt().toFloat() }, valueRange = -65f..-20f)
             Text(stringResource(R.string.silence_min_ms_label, silenceMinMs))
+            @Suppress("DEPRECATION")
             Slider(value = silenceMinMs.toFloat(), onValueChange = { silenceMinMs = it.roundToInt() }, valueRange = 150f..2000f)
             FilledTonalButton(
-                onClick = { onTrimSilence(silenceDb, silenceMinMs); onDismiss() },
+                onClick = { onStopPreview(); onTrimSilence(silenceDb, silenceMinMs); onDismiss() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.effect_trim_silence))

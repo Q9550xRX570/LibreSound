@@ -24,6 +24,7 @@ import com.libreopus.dsp.effects.FadeProcessor
 import com.libreopus.dsp.effects.FilterAndGateProcessor
 import com.libreopus.dsp.effects.GainAndNormalizeProcessor
 import com.libreopus.dsp.effects.EqualizerProcessor
+import com.libreopus.dsp.effects.LiveDspConfig
 import com.libreopus.dsp.effects.TimePitchProcessor
 import com.libreopus.dsp.effects.UtilityProcessors
 import com.libreopus.dsp.storage.AudioSegment
@@ -75,6 +76,8 @@ data class EditorUiState(
     val busyLabel: String? = null,
     val busyProgress: Float = 0f,
 )
+
+enum class TrimMarkerTarget { START, CURSOR, END }
 
 sealed class EditorEvent {
     data class Message(val text: String) : EditorEvent()
@@ -283,6 +286,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             player.pause()
             return
         }
+        player.clearLiveDsp()
+        player.setPlaybackSpeed(st.playbackSpeed)
         val start = if (selectionOnly) st.selectionStartMs else st.playheadMs.let { if (it >= st.durationMs - 30L) 0L else it }
         val end = if (selectionOnly && st.selectionEndMs > st.selectionStartMs + 20L) st.selectionEndMs else st.durationMs
         player.play(tl, start, end, st.loopSelection)
@@ -296,6 +301,63 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         val clamped = speed.coerceIn(0.5f, 2.0f)
         player.setPlaybackSpeed(clamped)
         _state.update { it.copy(playbackSpeed = clamped) }
+    }
+
+    fun nudgeMarker(target: TrimMarkerTarget, deltaMs: Long) {
+        val st = _state.value
+        val dur = st.durationMs
+        if (dur <= 0L) return
+        when (target) {
+            TrimMarkerTarget.START -> {
+                val maxStart = (st.selectionEndMs - 10L).coerceAtLeast(0L)
+                val next = (st.selectionStartMs + deltaMs).coerceIn(0L, maxStart)
+                _state.update { it.copy(selectionStartMs = next) }
+            }
+            TrimMarkerTarget.END -> {
+                val minEnd = (st.selectionStartMs + 10L).coerceAtMost(dur)
+                val next = (st.selectionEndMs + deltaMs).coerceIn(minEnd, dur)
+                _state.update { it.copy(selectionEndMs = next) }
+            }
+            TrimMarkerTarget.CURSOR -> {
+                seekTo(st.playheadMs + deltaMs)
+            }
+        }
+    }
+
+    fun updateLiveDspPreview(config: LiveDspConfig) {
+        player.updateLiveDsp(config)
+    }
+
+    fun updateLiveSpeedPitchPreview(
+        tempo: Float,
+        pitchSemitones: Float,
+        linked: Boolean,
+        bypass: Boolean,
+    ) {
+        if (bypass) {
+            player.setPlaybackSpeedAndPitch(1.0f, 0f, linked = false)
+        } else {
+            player.setPlaybackSpeedAndPitch(tempo, pitchSemitones, linked)
+        }
+    }
+
+    fun toggleEffectPreviewPlayback() {
+        val st = _state.value
+        val tl = st.timeline ?: return
+        if (st.isPlaying) {
+            player.pause()
+            return
+        }
+        val hasSel = st.selectionEndMs > st.selectionStartMs + 20L
+        val start = if (hasSel) st.selectionStartMs else 0L
+        val end = if (hasSel) st.selectionEndMs else st.durationMs
+        player.play(tl, start, end, loop = true)
+    }
+
+    fun stopEffectPreview() {
+        player.pause()
+        player.clearLiveDsp()
+        player.setPlaybackSpeed(_state.value.playbackSpeed)
     }
 
     fun undo() {

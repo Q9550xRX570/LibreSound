@@ -298,4 +298,28 @@
     <string name="download_history_refill">URL Kullan</string>
     <string name="download_history_delete">Geçmişten kaldır</string>
     <string name="download_history_file_missing">Kaydedilen dosyaya artık erişilemiyor</string>
+
+    <!-- Live DSP Preview & Fine Selection -->
+    <string name="preview_start">Ön-Dinle</string>
+    <string name="preview_stop">Durdur</string>
+    <string name="preview_ab_effect">Efektli (B)</string>
+    <string name="preview_ab_original">Orijinal (A)</string>
+    <string name="preview_speed_pitch_note">Canlı önizleme sistem perdesi kullanır; Uygula tam WSOLA işler</string>
+    <string name="nudge_start">Baş</string>
+    <string name="nudge_cursor">İmleç</string>
+    <string name="nudge_end">Son</string>
+    <string name="nudge_minus_100ms">-0.1sn</string>
+    <string name="nudge_plus_100ms">+0.1sn</string>
+    <string name="editor_undo_label">Geri Al: %1$s</string>
+    <string name="editor_redo_label">İleri Al: %1$s</string>
+
+    <!-- Batch Converter Options -->
+    <string name="converter_channels_label">Kanallar</string>
+    <string name="converter_channel_keep">Orijinal</string>
+    <string name="converter_channel_mono">Mono</string>
+    <string name="converter_channel_stereo">Stereo</string>
+    <string name="converter_samplerate_label">Örnekleme Hızı</string>
+    <string name="converter_samplerate_original">Orijinal</string>
+    <string name="converter_samplerate_opus_note">Opus standardı gereği her zaman 48 kHz kullanır</string>
+    <string name="converter_wav_depth_label">WAV Bit Derinliği</string>
 </resources>

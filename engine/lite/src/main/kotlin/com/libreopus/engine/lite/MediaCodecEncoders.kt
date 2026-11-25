@@ -15,6 +15,7 @@ import com.libreopus.dsp.container.FlacMetadataCodec
 import com.libreopus.dsp.container.OpusContainer
 import com.libreopus.dsp.container.WavCodec
 import com.libreopus.dsp.effects.HermiteResampler
+import com.libreopus.dsp.effects.ResamplingTimelineReader
 import com.libreopus.dsp.effects.SoftClipLimiter
 import com.libreopus.dsp.storage.DiskPcmStore
 import java.io.ByteArrayOutputStream
@@ -38,7 +39,7 @@ internal object MediaCodecEncoders {
         return when (config.format) {
             ExportFormat.WAV -> {
                 val counting = CountingStream(outputStream)
-                val adapted = adaptReader(reader, config.channelMode)
+                val adapted = adaptReader(reader, config.channelMode, config.sampleRateHz)
                 WavCodec.writePcmTimelineAsWav(adapted, config.wavBitDepth, config.metadata, counting, onProgress)
                 val durMs = if (adapted.sampleRate > 0) (adapted.totalFrames * 1000L) / adapted.sampleRate else 0L
                 ExportResult(counting.bytesWritten, durMs, wasLossless = true)
@@ -61,7 +62,7 @@ internal object MediaCodecEncoders {
         outputStream: OutputStream,
         onProgress: (Float) -> Unit,
     ): ExportResult {
-        val adapted = adaptReader(reader, config.channelMode)
+        val adapted = adaptReader(reader, config.channelMode, 0)
         val outChannels = adapted.channels.coerceIn(1, 2)
         val opusRate = 48000
         val bitrate = (config.bitrateKbps.coerceIn(16, 510)) * 1000
@@ -216,8 +217,8 @@ internal object MediaCodecEncoders {
         tempDir: File,
         onProgress: (Float) -> Unit,
     ): ExportResult {
-        val adapted = adaptReader(reader, config.channelMode)
-        val outSr = if (config.sampleRateHz > 0) config.sampleRateHz else adapted.sampleRate
+        val adapted = adaptReader(reader, config.channelMode, config.sampleRateHz)
+        val outSr = adapted.sampleRate
         val ch = adapted.channels.coerceIn(1, 2)
 
         val codec = createSoftwarePreferredEncoder("audio/flac", "c2.android.flac.encoder")
@@ -316,8 +317,9 @@ internal object MediaCodecEncoders {
         tempDir: File,
         onProgress: (Float) -> Unit,
     ): ExportResult {
-        val adapted = adaptReader(reader, config.channelMode)
-        val outSr = (if (config.sampleRateHz > 0) config.sampleRateHz else adapted.sampleRate).coerceIn(8000, 96000)
+        val reqSr = if (config.sampleRateHz > 0) config.sampleRateHz.coerceIn(8000, 96000) else 0
+        val adapted = adaptReader(reader, config.channelMode, reqSr)
+        val outSr = adapted.sampleRate.coerceIn(8000, 96000)
         val ch = adapted.channels.coerceIn(1, 2)
         val bitrate = config.bitrateKbps.coerceIn(64, 320) * 1000
 
@@ -454,14 +456,22 @@ internal object MediaCodecEncoders {
         return MediaCodec.createEncoderByType(mime)
     }
 
-    private fun adaptReader(reader: PcmTimelineReader, mode: ChannelMode): PcmTimelineReader {
+    private fun adaptReader(
+        reader: PcmTimelineReader,
+        mode: ChannelMode,
+        targetSampleRateHz: Int = 0,
+    ): PcmTimelineReader {
         val targetCh = when (mode) {
             ChannelMode.KEEP -> reader.channels
             ChannelMode.MONO -> 1
             ChannelMode.STEREO -> 2
         }
-        if (targetCh == reader.channels) return reader
-        return ChannelAdaptingReader(reader, targetCh)
+        val chAdapted = if (targetCh == reader.channels) reader else ChannelAdaptingReader(reader, targetCh)
+        return if (targetSampleRateHz > 0 && targetSampleRateHz != chAdapted.sampleRate && chAdapted.sampleRate > 0) {
+            ResamplingTimelineReader(chAdapted, targetSampleRateHz)
+        } else {
+            chAdapted
+        }
     }
 }
 

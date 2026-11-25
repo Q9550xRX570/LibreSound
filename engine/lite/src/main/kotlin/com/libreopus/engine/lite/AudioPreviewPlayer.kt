@@ -6,9 +6,12 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.PlaybackParams
 import com.libreopus.audio.api.PcmTimelineReader
+import com.libreopus.dsp.effects.LiveDspChain
+import com.libreopus.dsp.effects.LiveDspConfig
 import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.min
+import kotlin.math.pow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,6 +40,12 @@ class AudioPreviewPlayer {
     private var playbackSpeed: Float = 1f
 
     @Volatile
+    private var playbackPitch: Float = 1f
+
+    @Volatile
+    private var liveDspConfig: LiveDspConfig = LiveDspConfig()
+
+    @Volatile
     private var pendingSeekFrame: Long = -1L
 
     @Volatile
@@ -50,10 +59,36 @@ class AudioPreviewPlayer {
 
     fun setPlaybackSpeed(speed: Float) {
         playbackSpeed = speed.coerceIn(0.5f, 2.0f)
+        playbackPitch = 1f
+        applyPlaybackParams()
+    }
+
+    fun setPlaybackSpeedAndPitch(speed: Float, pitchSemitones: Float, linked: Boolean) {
+        val clampedSpeed = speed.coerceIn(0.5f, 2.0f)
+        playbackSpeed = clampedSpeed
+        playbackPitch = if (linked) {
+            clampedSpeed
+        } else {
+            2.0.pow(pitchSemitones.coerceIn(-12f, 12f) / 12.0).toFloat().coerceIn(0.5f, 2.0f)
+        }
+        applyPlaybackParams()
+    }
+
+    fun updateLiveDsp(config: LiveDspConfig) {
+        liveDspConfig = config
+    }
+
+    fun clearLiveDsp() {
+        liveDspConfig = LiveDspConfig()
+    }
+
+    private fun applyPlaybackParams() {
         runCatching {
             audioTrack?.let { track ->
                 if (track.playState == AudioTrack.PLAYSTATE_PLAYING) {
-                    track.playbackParams = PlaybackParams().setSpeed(playbackSpeed)
+                    track.playbackParams = PlaybackParams()
+                        .setSpeed(playbackSpeed)
+                        .setPitch(playbackPitch)
                 }
             }
         }
@@ -106,10 +141,15 @@ class AudioPreviewPlayer {
         _positionMs.value = startMs
 
         playJob = scope.launch {
+            val liveChain = LiveDspChain(sr, ch)
             try {
                 track.play()
-                if (abs(playbackSpeed - 1f) > 0.01f) {
-                    runCatching { track.playbackParams = PlaybackParams().setSpeed(playbackSpeed) }
+                if (abs(playbackSpeed - 1f) > 0.01f || abs(playbackPitch - 1f) > 0.01f) {
+                    runCatching {
+                        track.playbackParams = PlaybackParams()
+                            .setSpeed(playbackSpeed)
+                            .setPitch(playbackPitch)
+                    }
                 }
 
                 val chunkFrames = 1024
@@ -121,12 +161,15 @@ class AudioPreviewPlayer {
                     if (reqSeek >= 0L) {
                         pendingSeekFrame = -1L
                         cursor = reqSeek.coerceIn(startFrame, (endFrame - 1L).coerceAtLeast(startFrame))
+                        liveChain.resetState()
                         runCatching {
                             track.pause()
                             track.flush()
                             track.play()
-                            if (abs(playbackSpeed - 1f) > 0.01f) {
-                                track.playbackParams = PlaybackParams().setSpeed(playbackSpeed)
+                            if (abs(playbackSpeed - 1f) > 0.01f || abs(playbackPitch - 1f) > 0.01f) {
+                                track.playbackParams = PlaybackParams()
+                                    .setSpeed(playbackSpeed)
+                                    .setPitch(playbackPitch)
                             }
                         }
                     }
@@ -135,6 +178,7 @@ class AudioPreviewPlayer {
                     if (remaining <= 0L) {
                         if (loop) {
                             cursor = startFrame
+                            liveChain.resetState()
                             continue
                         } else {
                             break
@@ -144,6 +188,9 @@ class AudioPreviewPlayer {
                     val toRead = min(chunkFrames.toLong(), remaining).toInt()
                     val read = reader.readFrames(cursor, buf, 0, toRead)
                     if (read <= 0) break
+
+                    liveChain.updateConfig(liveDspConfig)
+                    liveChain.processInterleaved16(buf, read)
 
                     var peak = 0
                     for (i in 0 until read * ch) {

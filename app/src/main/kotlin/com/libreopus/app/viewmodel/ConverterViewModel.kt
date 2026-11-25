@@ -31,6 +31,8 @@ data class BatchItem(
     val status: QueueItemStatus = QueueItemStatus.PENDING,
     val progress: Float = 0f,
     val outputName: String? = null,
+    val outputContentUri: Uri? = null,
+    val outputMimeType: String? = null,
     val error: String? = null,
 )
 
@@ -78,6 +80,7 @@ class ConverterViewModel(application: Application) : AndroidViewModel(applicatio
     fun updateConfig(
         format: ExportFormat = _state.value.targetFormat,
         bitrateKbps: Int = _state.value.bitrateKbps,
+        sampleRateHz: Int = _state.value.sampleRateHz,
         channelMode: ChannelMode = _state.value.channelMode,
         wavBitDepth: WavBitDepth = _state.value.wavBitDepth,
         normalizeLufs: Boolean = _state.value.normalizeLufs,
@@ -86,6 +89,7 @@ class ConverterViewModel(application: Application) : AndroidViewModel(applicatio
             it.copy(
                 targetFormat = format,
                 bitrateKbps = bitrateKbps,
+                sampleRateHz = sampleRateHz,
                 channelMode = channelMode,
                 wavBitDepth = wavBitDepth,
                 normalizeLufs = normalizeLufs,
@@ -152,7 +156,13 @@ class ConverterViewModel(application: Application) : AndroidViewModel(applicatio
                         }
                         MediaStorageHelper.finalizeMusicExportTarget(ctx, outUri)
                         updateItem(idx) {
-                            it.copy(status = QueueItemStatus.DONE, progress = 1f, outputName = "Music/LibreOpus/$outName")
+                            it.copy(
+                                status = QueueItemStatus.DONE,
+                                progress = 1f,
+                                outputName = "Music/LibreOpus/$outName",
+                                outputContentUri = outUri,
+                                outputMimeType = snap.targetFormat.mimeType,
+                            )
                         }
                     } catch (ce: CancellationException) {
                         throw ce

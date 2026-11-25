@@ -217,7 +217,7 @@ object FilterAndGateProcessor {
         return EditTimeline(sr, ch, keptSegments)
     }
 
-    private fun createButterworthHighPass(fs: Double, f0: Double): BiquadFilter {
+    internal fun createButterworthHighPass(fs: Double, f0: Double): BiquadFilter {
         val w0 = 2.0 * PI * f0 / fs
         val cosW0 = cos(w0)
         val alpha = sin(w0) / sqrt(2.0)
@@ -231,7 +231,7 @@ object FilterAndGateProcessor {
         )
     }
 
-    private fun createButterworthLowPass(fs: Double, f0: Double): BiquadFilter {
+    internal fun createButterworthLowPass(fs: Double, f0: Double): BiquadFilter {
         val w0 = 2.0 * PI * f0 / fs
         val cosW0 = cos(w0)
         val alpha = sin(w0) / sqrt(2.0)

@@ -60,7 +60,7 @@ object EqualizerProcessor {
         }
     }
 
-    private fun createPeaking(fs: Double, f0: Double, q: Double, gainDb: Double): BiquadFilter {
+    internal fun createPeaking(fs: Double, f0: Double, q: Double, gainDb: Double): BiquadFilter {
         val a = 10.0.pow(gainDb / 40.0)
         val w0 = 2.0 * PI * f0 / fs
         val cosW0 = cos(w0)
@@ -75,7 +75,7 @@ object EqualizerProcessor {
         )
     }
 
-    private fun createLowShelf(fs: Double, f0: Double, gainDb: Double): BiquadFilter {
+    internal fun createLowShelf(fs: Double, f0: Double, gainDb: Double): BiquadFilter {
         val a = 10.0.pow(gainDb / 40.0)
         val w0 = 2.0 * PI * f0 / fs
         val cosW0 = cos(w0)
@@ -91,7 +91,7 @@ object EqualizerProcessor {
         )
     }
 
-    private fun createHighShelf(fs: Double, f0: Double, gainDb: Double): BiquadFilter {
+    internal fun createHighShelf(fs: Double, f0: Double, gainDb: Double): BiquadFilter {
         val a = 10.0.pow(gainDb / 40.0)
         val w0 = 2.0 * PI * f0 / fs
         val cosW0 = cos(w0)
