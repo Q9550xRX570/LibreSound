@@ -46,6 +46,9 @@ android {
     val isLiteOnlyBuild = requestedTasks.isNotEmpty() && requestedTasks.all {
         it.contains("Lite", ignoreCase = true) && !it.contains("Full", ignoreCase = true)
     }
+    val previewArm64Only = providers.gradleProperty("libreopus.previewArm64Only")
+        .map { it.equals("true", ignoreCase = true) }
+        .getOrElse(false)
 
     flavorDimensions += "engine"
     productFlavors {
@@ -71,8 +74,13 @@ android {
             abi {
                 isEnable = true
                 reset()
-                include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-                isUniversalApk = true
+                if (previewArm64Only) {
+                    include("arm64-v8a")
+                    isUniversalApk = false
+                } else {
+                    include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+                    isUniversalApk = true
+                }
             }
         }
     }

@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      include_all_abis:
+        description: "Build all ABIs + universal APK for full preview"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   test-and-lint:
@@ -56,14 +62,33 @@ jobs:
       - name: Assemble Lite Preview APK
         run: ./gradlew :app:assembleLitePreview
 
-      - name: Assemble Full Preview APKs (ABI splits + universal)
-        run: ./gradlew :app:assembleFullPreview
+      - name: Assemble Full Preview APK
+        run: |
+          if [ "${{ inputs.include_all_abis }}" = "true" ]; then
+            ./gradlew :app:assembleFullPreview
+          else
+            ./gradlew :app:assembleFullPreview -Plibreopus.previewArm64Only=true
+          fi
 
-      - name: Upload Preview APKs
+      - name: Upload Lite Preview APK
         uses: actions/upload-artifact@v4
         with:
-          name: LibreOpus-Preview-APKs
-          path: |
-            app/build/outputs/apk/lite/preview/*.apk
-            app/build/outputs/apk/full/preview/*.apk
+          name: LibreOpus-Lite-Preview
+          path: app/build/outputs/apk/lite/preview/*.apk
+          if-no-files-found: error
+
+      - name: Upload Full ARM64 Preview APK
+        if: inputs.include_all_abis != true
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibreOpus-Full-ARM64-Preview
+          path: app/build/outputs/apk/full/preview/*arm64-v8a*.apk
+          if-no-files-found: error
+
+      - name: Upload Full Multi-ABI Preview APKs
+        if: inputs.include_all_abis == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibreOpus-Full-All-ABIs-Preview
+          path: app/build/outputs/apk/full/preview/*.apk
           if-no-files-found: error
