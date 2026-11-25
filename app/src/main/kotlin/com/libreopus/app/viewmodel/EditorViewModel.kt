@@ -127,6 +127,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         displayName: String,
         coverBytes: ByteArray? = null,
         coverMime: String? = null,
+        overrideMetadata: AudioMetadata? = null,
     ) {
         val source = object : com.libreopus.audio.api.AudioSource {
             override val displayName: String = displayName
@@ -134,7 +135,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             override val mimeType: String? = null
             override fun openInputStream() = file.inputStream()
         }
-        openSourceInternal(source, recentUriString = null, overrideCoverBytes = coverBytes, overrideCoverMime = coverMime)
+        openSourceInternal(
+            source = source,
+            recentUriString = null,
+            overrideCoverBytes = coverBytes,
+            overrideCoverMime = coverMime,
+            overrideMetadata = overrideMetadata,
+        )
     }
 
     fun applyCoverArtBytes(bytes: ByteArray, mimeType: String) {
@@ -147,6 +154,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         recentUriString: String?,
         overrideCoverBytes: ByteArray?,
         overrideCoverMime: String?,
+        overrideMetadata: AudioMetadata? = null,
     ) {
         player.pause()
         activeTaskJob?.cancel()
@@ -163,13 +171,29 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 val decoded = engine.decodeToPcm(source, dir) { p ->
                     _state.update { it.copy(busyProgress = p) }
                 }
+                val baseMeta = if (overrideMetadata != null) {
+                    val d = decoded.metadata
+                    d.copy(
+                        title = d.title.ifBlank { overrideMetadata.title },
+                        artist = d.artist.ifBlank { overrideMetadata.artist },
+                        album = d.album.ifBlank { overrideMetadata.album },
+                        albumArtist = d.albumArtist.ifBlank { overrideMetadata.albumArtist },
+                        year = d.year.ifBlank { overrideMetadata.year },
+                        trackNumber = d.trackNumber.ifBlank { overrideMetadata.trackNumber },
+                        genre = d.genre.ifBlank { overrideMetadata.genre },
+                        comment = d.comment.ifBlank { overrideMetadata.comment },
+                        composer = d.composer.ifBlank { overrideMetadata.composer },
+                    )
+                } else {
+                    decoded.metadata
+                }
                 val initialMeta = if (overrideCoverBytes != null && overrideCoverBytes.isNotEmpty()) {
-                    decoded.metadata.copy(
+                    baseMeta.copy(
                         coverArtBytes = overrideCoverBytes,
                         coverArtMimeType = overrideCoverMime ?: "image/jpeg",
                     )
                 } else {
-                    decoded.metadata
+                    baseMeta
                 }
                 val timeline = EditTimeline.fromSingleFile(
                     sampleRate = decoded.info.sampleRate,

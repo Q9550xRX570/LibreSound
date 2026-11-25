@@ -42,6 +42,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val requestedTasks = gradle.startParameter.taskNames
+    val isLiteOnlyBuild = requestedTasks.isNotEmpty() && requestedTasks.all {
+        it.contains("Lite", ignoreCase = true) && !it.contains("Full", ignoreCase = true)
+    }
+
     flavorDimensions += "engine"
     productFlavors {
         create("lite") {
@@ -53,8 +58,21 @@ android {
             dimension = "engine"
             buildConfigField("String", "AUDIO_ENGINE_FLAVOR", "\"full\"")
             buildConfigField("boolean", "HAS_YTDLP", "true")
-            ndk {
-                abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            if (isLiteOnlyBuild) {
+                ndk {
+                    abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+                }
+            }
+        }
+    }
+
+    if (!isLiteOnlyBuild) {
+        splits {
+            abi {
+                isEnable = true
+                reset()
+                include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+                isUniversalApk = true
             }
         }
     }

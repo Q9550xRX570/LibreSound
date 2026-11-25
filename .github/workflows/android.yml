@@ -1,0 +1,69 @@
+name: Android CI & Preview APKs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Accept Android SDK licenses
+        run: |
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          fi
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run unit tests and lint
+        run: ./gradlew :core:dsp:test :app:testLiteDebugUnitTest :app:testFullDebugUnitTest :app:lintLiteDebug :app:lintFullDebug
+
+  build-preview-apks:
+    needs: test-and-lint
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Accept Android SDK licenses
+        run: |
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          fi
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble Lite Preview APK
+        run: ./gradlew :app:assembleLitePreview
+
+      - name: Assemble Full Preview APKs (ABI splits + universal)
+        run: ./gradlew :app:assembleFullPreview
+
+      - name: Upload Preview APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibreOpus-Preview-APKs
+          path: |
+            app/build/outputs/apk/lite/preview/*.apk
+            app/build/outputs/apk/full/preview/*.apk
+          if-no-files-found: error

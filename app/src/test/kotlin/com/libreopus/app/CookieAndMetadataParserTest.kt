@@ -1,0 +1,140 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package com.libreopus.app
+
+import com.libreopus.app.downloader.CookieParser
+import com.libreopus.app.downloader.InfoJsonMetadataParser
+import com.libreopus.app.downloader.YtDlpErrorClassifier
+import com.libreopus.app.downloader.YtDlpErrorKind
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class CookieAndMetadataParserTest {
+
+    @Test
+    fun `parseAndNormalize preserves HttpOnly Netscape cookies and normalizes CRLF`() {
+        val raw = "# Netscape HTTP Cookie File\r\n" +
+            "#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t1800000000\tSID\tabc123\r\n" +
+            ".google.com\tTRUE\t/\tFALSE\t0\tPREF\t\r\n"
+
+        val parsed = CookieParser.parseAndNormalize(raw)
+        assertFalse(parsed.summary.convertedFromJson)
+        assertEquals(2, parsed.summary.cookieCount)
+        assertEquals(listOf("youtube.com", "google.com"), parsed.summary.domains)
+        assertTrue(parsed.netscapeText.contains("#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t1800000000\tSID\tabc123"))
+        assertTrue(parsed.netscapeText.contains(".google.com\tTRUE\t/\tFALSE\t0\tPREF\t"))
+    }
+
+    @Test
+    fun `parseAndNormalize converts Cookie-Editor JSON array to Netscape format`() {
+        val json = """
+            [
+              {
+                "domain": "youtube.com",
+                "hostOnly": false,
+                "httpOnly": true,
+                "name": "__Secure-1PSID",
+                "path": "/",
+                "secure": true,
+                "session": false,
+                "expirationDate": 1893456000.75,
+                "value": "token_xyz"
+              },
+              {
+                "domain": ".soundcloud.com",
+                "httpOnly": false,
+                "name": "oauth_token",
+                "path": "/",
+                "secure": true,
+                "session": true,
+                "value": "sc_123"
+              }
+            ]
+        """.trimIndent()
+
+        val parsed = CookieParser.parseAndNormalize(json)
+        assertTrue(parsed.summary.convertedFromJson)
+        assertEquals(2, parsed.summary.cookieCount)
+        assertEquals(listOf("youtube.com", "soundcloud.com"), parsed.summary.domains)
+        assertTrue(parsed.netscapeText.startsWith("# Netscape HTTP Cookie File"))
+        assertTrue(parsed.netscapeText.contains("#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t1893456000\t__Secure-1PSID\ttoken_xyz"))
+        assertTrue(parsed.netscapeText.contains(".soundcloud.com\tTRUE\t/\tTRUE\t0\toauth_token\tsc_123"))
+    }
+
+    @Test
+    fun `parseAndNormalize converts wrapped cookies object and rejects garbage`() {
+        val wrapped = """{"url":"https://youtube.com","cookies":[{"domain":".youtube.com","name":"VISITOR","value":"v1","secure":true}]}"""
+        val res = CookieParser.parseAndNormalize(wrapped)
+        assertEquals(1, res.summary.cookieCount)
+        assertTrue(res.summary.convertedFromJson)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            CookieParser.parseAndNormalize("just some random text without tabs")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CookieParser.parseAndNormalize("   ")
+        }
+    }
+
+    @Test
+    fun `infoJsonMetadataParser extracts YouTube and SoundCloud tags cleanly`() {
+        val json = """
+            {
+              "title": "Artist - Track Name (Official Audio)",
+              "track": "Track Name",
+              "artists": ["Artist One", "Artist Two"],
+              "album": "Midnight Studio",
+              "release_year": 2025,
+              "upload_date": "20250412",
+              "track_number": 3,
+              "genres": ["Electronic"],
+              "webpage_url": "https://music.youtube.com/watch?v=dQw4w9WgXcQ"
+            }
+        """.trimIndent()
+
+        val meta = InfoJsonMetadataParser.parse(json)
+        assertNotNull(meta)
+        assertEquals("Track Name", meta!!.title)
+        assertEquals("Artist One, Artist Two", meta.artist)
+        assertEquals("Midnight Studio", meta.album)
+        assertEquals("2025", meta.year)
+        assertEquals("3", meta.trackNumber)
+        assertEquals("Electronic", meta.genre)
+        assertEquals("https://music.youtube.com/watch?v=dQw4w9WgXcQ", meta.comment)
+    }
+
+    @Test
+    fun `errorClassifier categorizes common yt-dlp failure modes`() {
+        assertEquals(
+            YtDlpErrorKind.BOT_CHECK_NEEDS_COOKIES,
+            YtDlpErrorClassifier.classify("ERROR: [youtube] xyz: Sign in to confirm you're not a bot.").kind,
+        )
+        assertEquals(
+            YtDlpErrorKind.AGE_RESTRICTED_NEEDS_COOKIES,
+            YtDlpErrorClassifier.classify("ERROR: Sign in to confirm your age. This video may be inappropriate for some users.").kind,
+        )
+        assertEquals(
+            YtDlpErrorKind.PRIVATE_OR_AUTH_NEEDS_COOKIES,
+            YtDlpErrorClassifier.classify("ERROR: [youtube] xyz: Join this channel to get access to members-only content.").kind,
+        )
+        assertEquals(
+            YtDlpErrorKind.HTTP_403_FORBIDDEN,
+            YtDlpErrorClassifier.classify("ERROR: unable to download video data: HTTP Error 403: Forbidden").kind,
+        )
+        assertEquals(
+            YtDlpErrorKind.FFMPEG_REQUIRED,
+            YtDlpErrorClassifier.classify("ERROR: Postprocessing: ffprobe and ffmpeg not found. Please install or provide the path using --ffmpeg-location").kind,
+        )
+        assertEquals(
+            YtDlpErrorKind.NETWORK_OR_TIMEOUT,
+            YtDlpErrorClassifier.classify("ERROR: Unable to download webpage: <urlopen error timed out>").kind,
+        )
+        assertEquals(
+            YtDlpErrorKind.UNSUPPORTED_URL,
+            YtDlpErrorClassifier.classify("ERROR: Unsupported URL: https://example.com/foo").kind,
+        )
+    }
+}

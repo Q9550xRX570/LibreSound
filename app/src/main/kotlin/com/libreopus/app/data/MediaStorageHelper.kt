@@ -88,32 +88,101 @@ object MediaStorageHelper {
     }
 
     fun saveAudioFileToMusic(context: Context, fileName: String, mimeType: String, sourceFile: File) {
-        val values = ContentValues().apply {
-            put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/LibreOpus")
-            put(MediaStore.Audio.Media.IS_PENDING, 1)
-        }
-        val uri = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values) ?: return
-        context.contentResolver.openOutputStream(uri)?.use { out ->
-            sourceFile.inputStream().use { input -> input.copyTo(out, 32768) }
-        }
-        finalizeMusicExportTarget(context, uri)
+        saveDownloadedMediaToStorage(context, fileName, mimeType, sourceFile)
     }
 
-    fun saveImageToPictures(context: Context, fileName: String, mimeType: String, sourceFile: File) {
+    /**
+     * Saves downloaded audio/media into `Music/LibreOpus` when accepted by MediaStore Audio,
+     * falling back seamlessly to `Download/LibreOpus` for containers like WebM/MKV/MP4.
+     */
+    fun saveDownloadedMediaToStorage(
+        context: Context,
+        fileName: String,
+        mimeType: String,
+        sourceFile: File,
+    ): String? {
+        val preferDownloads = mimeType.startsWith("video/") ||
+            fileName.endsWith(".mp4", ignoreCase = true) ||
+            fileName.endsWith(".mkv", ignoreCase = true)
+
+        if (!preferDownloads) {
+            val musicSaved = insertAndWrite(
+                context = context,
+                collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                relativePath = "${Environment.DIRECTORY_MUSIC}/LibreOpus",
+                displayNameCol = MediaStore.Audio.Media.DISPLAY_NAME,
+                mimeTypeCol = MediaStore.Audio.Media.MIME_TYPE,
+                relativePathCol = MediaStore.Audio.Media.RELATIVE_PATH,
+                isPendingCol = MediaStore.Audio.Media.IS_PENDING,
+                fileName = fileName,
+                mimeType = mimeType,
+                sourceFile = sourceFile,
+            )
+            if (musicSaved) return "Music/LibreOpus/$fileName"
+        }
+
+        val downloadMime = if (mimeType == "audio/*" || mimeType.isBlank()) "application/octet-stream" else mimeType
+        val dlSaved = insertAndWrite(
+            context = context,
+            collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            relativePath = "${Environment.DIRECTORY_DOWNLOADS}/LibreOpus",
+            displayNameCol = MediaStore.Downloads.DISPLAY_NAME,
+            mimeTypeCol = MediaStore.Downloads.MIME_TYPE,
+            relativePathCol = MediaStore.Downloads.RELATIVE_PATH,
+            isPendingCol = MediaStore.Downloads.IS_PENDING,
+            fileName = fileName,
+            mimeType = downloadMime,
+            sourceFile = sourceFile,
+        )
+        return if (dlSaved) "Download/LibreOpus/$fileName" else null
+    }
+
+    fun saveImageToPictures(context: Context, fileName: String, mimeType: String, sourceFile: File): String? {
+        val saved = insertAndWrite(
+            context = context,
+            collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            relativePath = "${Environment.DIRECTORY_PICTURES}/LibreOpus",
+            displayNameCol = MediaStore.Images.Media.DISPLAY_NAME,
+            mimeTypeCol = MediaStore.Images.Media.MIME_TYPE,
+            relativePathCol = MediaStore.Images.Media.RELATIVE_PATH,
+            isPendingCol = MediaStore.Images.Media.IS_PENDING,
+            fileName = fileName,
+            mimeType = mimeType,
+            sourceFile = sourceFile,
+        )
+        return if (saved) "Pictures/LibreOpus/$fileName" else null
+    }
+
+    private fun insertAndWrite(
+        context: Context,
+        collection: Uri,
+        relativePath: String,
+        displayNameCol: String,
+        mimeTypeCol: String,
+        relativePathCol: String,
+        isPendingCol: String,
+        fileName: String,
+        mimeType: String,
+        sourceFile: File,
+    ): Boolean {
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/LibreOpus")
-            put(MediaStore.Images.Media.IS_PENDING, 1)
+            put(displayNameCol, fileName)
+            put(mimeTypeCol, mimeType)
+            put(relativePathCol, relativePath)
+            put(isPendingCol, 1)
         }
-        val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return
-        context.contentResolver.openOutputStream(uri)?.use { out ->
-            sourceFile.inputStream().use { input -> input.copyTo(out, 32768) }
+        val uri = runCatching { context.contentResolver.insert(collection, values) }.getOrNull() ?: return false
+        return runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                sourceFile.inputStream().use { input -> input.copyTo(out, 32768) }
+            } ?: error("Cannot open MediaStore stream")
+            val done = ContentValues().apply { put(isPendingCol, 0) }
+            context.contentResolver.update(uri, done, null, null)
+            true
+        }.getOrElse {
+            runCatching { context.contentResolver.delete(uri, null, null) }
+            false
         }
-        val done = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
-        context.contentResolver.update(uri, done, null, null)
     }
 
     fun createShareIntent(context: Context, tempFile: File, mimeType: String): Intent {

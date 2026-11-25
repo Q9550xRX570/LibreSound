@@ -331,10 +331,10 @@ private fun LibreOpusAppContent(
                     state = downloadState,
                     viewModel = downloadVm,
                     hasActiveEditorSession = editorState.hasSession,
-                    onOpenInEditor = { audioFile, displayName, coverFile, coverMime ->
+                    onOpenInEditor = { audioFile, displayName, coverFile, coverMime, metadata ->
                         val coverBytes = coverFile?.takeIf { it.exists() }?.readBytes()
                         currentTab = TopTab.EDITOR
-                        editorVm.openLocalFile(audioFile, displayName, coverBytes, coverMime)
+                        editorVm.openLocalFile(audioFile, displayName, coverBytes, coverMime, metadata)
                     },
                     onUseAsCover = { imgFile, mime ->
                         val bytes = imgFile.takeIf { it.exists() }?.readBytes()
@@ -369,6 +369,9 @@ private fun LibreOpusAppContent(
                     onDefaultFormatChange = { f -> scope.launch { prefsRepo.setDefaultExportFormat(f) } },
                     onDefaultBitrateChange = { b -> scope.launch { prefsRepo.setDefaultBitrate(b) } },
                     modifier = Modifier.padding(innerPadding),
+                    downloadState = downloadState,
+                    onUpdateChannelChange = { ch -> downloadVm.setUpdateChannel(ch) },
+                    onCheckYtDlpUpdate = { downloadVm.updateEngine() },
                 )
             }
         }

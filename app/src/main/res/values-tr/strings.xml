@@ -145,6 +145,12 @@
     <string name="download_url_hint">Bağlantı yapıştır (YouTube, SoundCloud, Bandcamp…)</string>
     <string name="download_paste">Yapıştır</string>
     <string name="download_clear">Temizle</string>
+    <string name="download_fetch_info">Bilgi Al</string>
+    <string name="download_fetching_info">Medya bilgisi alınıyor…</string>
+    <string name="download_audio_format_label">Ses Format Tercihi</string>
+    <string name="download_format_auto">Otomatik En İyi</string>
+    <string name="download_format_opus">WebM (Opus)</string>
+    <string name="download_format_m4a">M4A (AAC)</string>
     <string name="download_presets_label">Hazır Betikler</string>
     <string name="download_preset_best_audio">En İyi Kalite Ses İndir</string>
     <string name="download_preset_best_audio_desc">En yüksek kaliteli yerel ses akışını indirir</string>
@@ -164,6 +170,39 @@
     <string name="download_saved_to">Kaydedildi: %1$s</string>
     <string name="download_logs">Konsol Çıktısı</string>
 
+    <!-- Cookies & Network Hardening -->
+    <string name="cookies_title">Çerezler (cookies.txt)</string>
+    <string name="cookies_manage">Yönet</string>
+    <string name="cookies_none">Çerez yüklü değil (isteğe bağlı)</string>
+    <string name="cookies_active_summary">%1$d çerez etkin (%2$s)</string>
+    <string name="cookies_loaded_paused">%1$d çerez yüklü (devre dışı)</string>
+    <string name="cookies_sheet_subtitle">Yaş kısıtlamalı, özel veya bot doğrulaması isteyen bağlantılar için Netscape cookies.txt ya da Cookie-Editor JSON verisi ekleyin. Yalnızca uygulama içinde özel olarak saklanır.</string>
+    <string name="cookies_import_file">Dosyadan İçe Aktar (.txt / .json)</string>
+    <string name="cookies_paste_label">cookies.txt veya JSON yapıştır</string>
+    <string name="cookies_paste_hint"># Netscape HTTP Cookie File…</string>
+    <string name="cookies_save_validate">Doğrula ve Kaydet</string>
+    <string name="cookies_clear">Çerezleri Temizle</string>
+    <string name="cookies_json_converted">JSON çerezleri Netscape biçimine dönüştürüldü (%1$d çerez).</string>
+    <string name="download_advanced_options">Ağ, Proxy ve Gelişmiş Seçenekler</string>
+    <string name="download_force_ipv4">IPv4 Zorla (--force-ipv4)</string>
+    <string name="download_geo_bypass">Bölge Kilidi Atla (--geo-bypass)</string>
+    <string name="download_proxy_label">Proxy URL (isteğe bağlı, örn. socks5://127.0.0.1:9050)</string>
+    <string name="download_user_agent_label">Özel User-Agent (isteğe bağlı)</string>
+
+    <!-- Error Diagnostics -->
+    <string name="ytdlp_err_bot_check">YouTube bot/oturum doğrulaması istedi. Oturum açık bir tarayıcıdan cookies.txt ekleyip yeniden deneyin.</string>
+    <string name="ytdlp_err_age">Bu medya yaş kısıtlamalı. İndirmek için geçerli tarayıcı çerezlerini etkinleştirin.</string>
+    <string name="ytdlp_err_auth">Bu içerik oturum veya üyelik gerektiriyor. Geçerli çerez dosyası eklemeyi deneyin.</string>
+    <string name="ytdlp_err_403">Sunucu HTTP 403 Yasaklandı hatası döndürdü. yt-dlp\'yi güncellemeyi, IPv4 Zorla\'yı açmayı veya çerez eklemeyi deneyin.</string>
+    <string name="ytdlp_err_ffmpeg">Bu özel komut FFmpeg gerektiriyor; uygulama boyutunu düşük tutmak için FFmpeg dahil edilmedi. -x olmadan doğrudan ses akışı seçin.</string>
+    <string name="ytdlp_err_network">Bağlantı veya zaman aşımı hatası oluştu. İnternetinizi kontrol edin ya da IPv4 Zorla seçeneğini deneyin.</string>
+    <string name="ytdlp_err_unsupported">Bu bağlantı mevcut yt-dlp çıkarıcıları tarafından desteklenmiyor. yt-dlp güncellemesi sorunu çözebilir.</string>
+    <string name="ytdlp_err_unavailable">Bu medya kullanılamıyor, silinmiş veya bölgenizde engellenmiş.</string>
+    <string name="ytdlp_action_add_cookies">Çerez Ekle</string>
+    <string name="ytdlp_action_force_ipv4">IPv4 Aç</string>
+    <string name="ytdlp_action_update_engine">yt-dlp Güncelle</string>
+    <string name="ytdlp_show_details">Teknik Detaylar</string>
+
     <!-- Settings & About -->
     <string name="settings_title">Ayarlar &amp; Hakkında</string>
     <string name="settings_appearance">Görünüm</string>
@@ -178,6 +217,16 @@
     <string name="settings_lang_en">English</string>
     <string name="settings_lang_tr">Türkçe</string>
     <string name="settings_defaults">Dışa Aktarma Varsayılanları</string>
+    <string name="settings_ytdlp_title">yt-dlp İndirme Motoru</string>
+    <string name="settings_ytdlp_version">Yüklü sürüm: %1$s</string>
+    <string name="settings_ytdlp_bundled">Paket içi (youtubedl-android 0.18.1)</string>
+    <string name="settings_ytdlp_channel">Güncelleme Kanalı</string>
+    <string name="settings_ytdlp_stable">Kararlı (Stable)</string>
+    <string name="settings_ytdlp_nightly">Gecelik (Nightly)</string>
+    <string name="settings_ytdlp_update_btn">yt-dlp Güncellemesini Denetle</string>
+    <string name="settings_ytdlp_updating">yt-dlp güncelleniyor…</string>
+    <string name="settings_ytdlp_updated">yt-dlp güncellendi: %1$s</string>
+    <string name="settings_ytdlp_up_to_date">yt-dlp zaten en güncel sürümde.</string>
     <string name="settings_about">LibreOpus Hakkında</string>
     <string name="settings_version">Sürüm %1$s (%2$s sürümü)</string>
     <string name="settings_license_title">GNU Genel Kamu Lisansı v3.0</string>

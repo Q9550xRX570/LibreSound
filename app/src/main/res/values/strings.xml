@@ -145,6 +145,12 @@
     <string name="download_url_hint">Paste media URL (YouTube, SoundCloud, Bandcamp…)</string>
     <string name="download_paste">Paste</string>
     <string name="download_clear">Clear</string>
+    <string name="download_fetch_info">Preview Info</string>
+    <string name="download_fetching_info">Fetching media info…</string>
+    <string name="download_audio_format_label">Audio Preference</string>
+    <string name="download_format_auto">Auto Best</string>
+    <string name="download_format_opus">WebM (Opus)</string>
+    <string name="download_format_m4a">M4A (AAC)</string>
     <string name="download_presets_label">Ready-Made Presets</string>
     <string name="download_preset_best_audio">Best Audio Quality</string>
     <string name="download_preset_best_audio_desc">Highest-quality native audio stream</string>
@@ -164,6 +170,39 @@
     <string name="download_saved_to">Saved: %1$s</string>
     <string name="download_logs">Console Output</string>
 
+    <!-- Cookies & Network Hardening -->
+    <string name="cookies_title">Cookies (cookies.txt)</string>
+    <string name="cookies_manage">Manage</string>
+    <string name="cookies_none">No cookies loaded (optional)</string>
+    <string name="cookies_active_summary">%1$d cookies active (%2$s)</string>
+    <string name="cookies_loaded_paused">%1$d cookies loaded (paused)</string>
+    <string name="cookies_sheet_subtitle">Use Netscape cookies.txt or browser Cookie-Editor JSON for age-restricted, private, or bot-checked links. Stored privately inside app storage.</string>
+    <string name="cookies_import_file">Import File (.txt / .json)</string>
+    <string name="cookies_paste_label">Paste cookies.txt or JSON</string>
+    <string name="cookies_paste_hint"># Netscape HTTP Cookie File…</string>
+    <string name="cookies_save_validate">Validate &amp; Save</string>
+    <string name="cookies_clear">Clear Cookies</string>
+    <string name="cookies_json_converted">Converted JSON cookies to Netscape format (%1$d cookies).</string>
+    <string name="download_advanced_options">Network, Proxy &amp; Options</string>
+    <string name="download_force_ipv4">Force IPv4 (--force-ipv4)</string>
+    <string name="download_geo_bypass">Geo-Bypass (--geo-bypass)</string>
+    <string name="download_proxy_label">Proxy URL (optional, e.g. socks5://127.0.0.1:9050)</string>
+    <string name="download_user_agent_label">Custom User-Agent (optional)</string>
+
+    <!-- Error Diagnostics -->
+    <string name="ytdlp_err_bot_check">YouTube requested bot/sign-in verification. Import a cookies.txt file from a signed-in browser and retry.</string>
+    <string name="ytdlp_err_age">This media is age-restricted. Enable valid browser cookies to download it.</string>
+    <string name="ytdlp_err_auth">Authentication or membership is required for this media. Try adding valid cookies.</string>
+    <string name="ytdlp_err_403">Server returned HTTP 403 Forbidden. Try updating yt-dlp, enabling Force IPv4, or adding cookies.</string>
+    <string name="ytdlp_err_ffmpeg">This custom command requires FFmpeg post-processing, which is omitted to keep the app lean. Choose a native audio format without -x instead.</string>
+    <string name="ytdlp_err_network">Network or timeout error while connecting. Check your internet connection or try Force IPv4.</string>
+    <string name="ytdlp_err_unsupported">This URL is not supported by the current yt-dlp extractors. Updating yt-dlp may add support.</string>
+    <string name="ytdlp_err_unavailable">This media is unavailable, removed, or blocked in your region.</string>
+    <string name="ytdlp_action_add_cookies">Add Cookies</string>
+    <string name="ytdlp_action_force_ipv4">Enable IPv4</string>
+    <string name="ytdlp_action_update_engine">Update yt-dlp</string>
+    <string name="ytdlp_show_details">Technical Details</string>
+
     <!-- Settings & About -->
     <string name="settings_title">Settings &amp; About</string>
     <string name="settings_appearance">Appearance</string>
@@ -178,6 +217,16 @@
     <string name="settings_lang_en">English</string>
     <string name="settings_lang_tr">Türkçe</string>
     <string name="settings_defaults">Export Defaults</string>
+    <string name="settings_ytdlp_title">yt-dlp Downloader Engine</string>
+    <string name="settings_ytdlp_version">Installed version: %1$s</string>
+    <string name="settings_ytdlp_bundled">Bundled (youtubedl-android 0.18.1)</string>
+    <string name="settings_ytdlp_channel">Update Channel</string>
+    <string name="settings_ytdlp_stable">Stable</string>
+    <string name="settings_ytdlp_nightly">Nightly</string>
+    <string name="settings_ytdlp_update_btn">Check &amp; Update yt-dlp</string>
+    <string name="settings_ytdlp_updating">Updating yt-dlp…</string>
+    <string name="settings_ytdlp_updated">Updated yt-dlp to %1$s</string>
+    <string name="settings_ytdlp_up_to_date">yt-dlp is already up to date.</string>
     <string name="settings_about">About LibreOpus</string>
     <string name="settings_version">Version %1$s (%2$s edition)</string>
     <string name="settings_license_title">GNU General Public License v3.0</string>

@@ -24,13 +24,12 @@ Defined in `app/build.gradle.kts` under `flavorDimensions += "engine"`:
    - Pure-Kotlin DSP + RFC container codecs + Android 10+ `MediaCodec`.
 2. **`full` Edition (`HAS_YTDLP = true`):**
    - Adds **only** `io.github.junkfood02.youtubedl-android:library:0.18.1` (GPLv3 — **no** `youtubedl-android:ffmpeg`, reusing `:engine:lite` so it stays lean!).
-   - **60.02 MB** universal 4-ABI release APK (`armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`).
+   - ABI-split APKs enabled for `full` (`arm64-v8a` **20.38 MB**, `armeabi-v7a` **18.92 MB**, `universal` **60.13 MB**), while `lite`-only builds emit a single **2.97 MB** F-Droid APK.
    - Adds `INTERNET` permission + `android:extractNativeLibs="true"` + `ACTION_SEND` (`text/plain`) link sharing in `app/src/full/AndroidManifest.xml`.
-   - Adds the **Media Downloader** tab (`DownloadScreen.kt` + `DownloadViewModel.kt`) with 4 ready-made `yt-dlp` presets:
-     - **En İyi Kalite Ses İndir (`BEST_AUDIO`):** `-f bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio --no-playlist --no-mtime --restrict-filenames` → saves to `Music/LibreOpus` + one-tap **Open in Editor**.
-     - **Sadece Resim İndir (`IMAGE_ONLY`):** `--skip-download --write-thumbnail --no-playlist --no-mtime --restrict-filenames` → saves to `Pictures/LibreOpus` + preview + **Use as Track Cover** / **Share**.
-     - **En İyi Ses + Kapak Resmi (`AUDIO_AND_IMAGE`):** downloads both and opens the audio in the editor with the downloaded cover attached to `AudioMetadata`.
-     - **Özel `yt-dlp` Betiği (`CUSTOM_SCRIPT`):** editable raw `yt-dlp` CLI flags (`PresetCommandBuilder.tokenizeArgs`).
+   - Adds the **Media Downloader** tab (`DownloadScreen.kt` + `DownloadViewModel.kt` + `CookieSupport.kt`):
+     - **Cookie Support (`cookies.txt`):** `CookieManagerSheet` accepts Netscape `cookies.txt` (preserving `#HttpOnly_` entries) or Cookie-Editor JSON (auto-converted via dependency-free `SimpleJsonParser`), stored privately in `filesDir/ytdlp/cookies.txt` and toggled via DataStore.
+     - **Track Preview (`--dump-json`):** Cancellable `fetchPreview` showing title, uploader, duration, best audio ext, and approx size before downloading.
+     - **Hardened `yt-dlp` Execution:** Audio preference selector (`AUTO_BEST`, `OPUS_WEBM`, `M4A_AAC`), `--write-info-json` automatic metadata extraction (`InfoJsonMetadataParser`) passed straight into `EditorViewModel`, WebP-to-JPEG cover normalization, `--retries`, `--socket-timeout`, `--force-ipv4`, `--geo-bypass`, custom `--proxy` & `--user-agent`, exact `addCommands` execution for `CUSTOM_SCRIPT`, `YtDlpErrorClassifier` with quick-fix actions, `MediaStore.Downloads` fallback for `.webm`/`.mp4`/`.mkv`, and in-app `yt-dlp` updater (`STABLE` / `NIGHTLY`) in `SettingsScreen`.
 3. **`preview` BuildType (alongside `debug` & F-Droid `release`):**
    - `initWith(release)`, `applicationIdSuffix = ".preview"`, `signingConfig = debug`. Produces R8-minified, directly installable APKs for pre-GitHub testing on phones while keeping `release` unsigned for F-Droid reproducible builds when no keystore is supplied.
 4. **Future `:engine:ffmpeg` Expansion:**
@@ -56,23 +55,26 @@ Defined in `app/build.gradle.kts` under `flavorDimensions += "engine"`:
 2. **Gradle `9.7.1` on JDK 25:** Targets JVM 17 (`JavaVersion.VERSION_17` / `JvmTarget.JVM_17`).
 3. **SDK & Compose BOM:** `compileSdk = 37`, `targetSdk = 36`, `minSdk = 29`, `composeBom = "2026.09.00"` + `material3 = "1.5.0"` (`2026.11.01` requires `compileSdk >= 37.1`).
 4. **RFC 6716 Opus TOC:** Config `16` (`0x80`) is 2.5 ms (`120` samples); CELT FB 20 ms (`960` samples) is config `31` (`0xF8`).
-5. **Lint & Manifest Rules (`abortOnError = true`):** Always set `android:exported="true"` explicitly on `MainActivity` in `app/src/full/AndroidManifest.xml`, use `formatted="false"` on literal `%` strings, `LocalResources.current` over `LocalContext.current.resources`, `#` comments in ProGuard rules, and `jniLibs { useLegacyPackaging = true }` so `youtubedl-android` extracts its native Python binaries cleanly.
+5. **Lint & Manifest Rules (`abortOnError = true`):** Always set `android:exported="true"` explicitly on `MainActivity` in `app/src/full/AndroidManifest.xml`, use `formatted="false"` on literal `%` strings, `LocalResources.current` over `LocalContext.current.resources`, `#` comments in ProGuard rules, avoid API 33+ `InputStream.readNBytes`, and keep `jniLibs { useLegacyPackaging = true }` so `youtubedl-android` extracts its native Python binaries cleanly.
 
 ---
 
-## 5. Verified Baseline (v1.0.0)
+## 5. Verified Baseline (`LibreSound` Hardened `yt-dlp` Update)
 
-- **Unit Tests:** All passed — `:core:dsp:test` (`16` tests across `DspProcessorsTest`, `EditTimelineTest`, `OggContainerTest`, `OpusContainerTest`, `WavAndFlacAndMp3Test`), `:app:testLiteDebugUnitTest` (`4` tests), `:app:testFullDebugUnitTest` (`4` tests).
-- **Builds & Lint:** `assembleLiteRelease` (`2.89 MB`), `assembleLitePreview` (`2.90 MB`), `assembleFullRelease` (`60.02 MB`), `assembleFullPreview` (`60.03 MB`), `lintLiteDebug` (`0` errors), `lintFullDebug` (`0` errors).
-- **Runtime Smoke Tests:**
-  - `liteDebug` installed & launched on user's physical Android phone (`192.168.1.105:34687`).
-  - `fullPreview` (`com.libreopus.app.preview`) cold-launched on `Pixel_8` AVD (`APP_PID=2275`, `0` `AndroidRuntime:E` crashes).
+- **Unit Tests (`38 / 38` passed):**
+  - `:core:dsp:test` (`16` tests across `DspProcessorsTest`, `EditTimelineTest`, `OggContainerTest`, `OpusContainerTest`, `WavAndFlacAndMp3Test`)
+  - `:app:testLiteDebugUnitTest` (`11` tests across `CookieAndMetadataParserTest`, `DownloaderPresetTest`, `FormattersTest`)
+  - `:app:testFullDebugUnitTest` (`11` tests across `CookieAndMetadataParserTest`, `DownloaderPresetTest`, `FormattersTest`)
+- **Builds & Lint:**
+  - `lintLiteDebug` (`0` errors), `lintFullDebug` (`0` errors)
+  - `assembleLiteRelease`: **2.97 MB** (`3,119,169` bytes), `0` `INTERNET` permission
+  - `assembleFullPreview`: `arm64-v8a` **20.38 MB**, `armeabi-v7a` **18.92 MB**, `x86` **20.08 MB**, `x86_64` **20.40 MB**, `universal` **60.13 MB**
+- **CI Workflow:** `.github/workflows/android.yml` runs tests, lint, and builds `litePreview` + `fullPreview` APK artifacts on push/dispatch.
 
 ---
 
 ## 6. Recommended Next Steps
 
-1. Collect user feedback from testing `lite-preview` and `full-ytdlp-preview` APKs on their physical phone (including `yt-dlp` preset behavior across real URLs).
-2. Consider ABI-split APKs (`arm64-v8a` ~20 MB vs universal 60 MB) for direct GitHub Releases while keeping universal APKs for F-Droid reproducibility.
-3. Add interactive `MixOverlayDialog`, split-export both halves, real-time DSP preview, and `:engine:ffmpeg` flavor when requested.
-4. Fill `fdroid/com.libreopus.app.yml` with the tagged GitHub commit, `Binaries:`, and `AllowedAPKSigningKeys` once published to GitHub.
+1. Test `fullPreview` (`arm64-v8a`) on device with real URLs, Netscape/JSON `cookies.txt`, preview info, and in-app `yt-dlp` updater.
+2. Add interactive `MixOverlayDialog`, split-export both halves, real-time DSP preview, and `:engine:ffmpeg` flavor when requested.
+3. Fill `fdroid/com.libreopus.app.yml` with the tagged GitHub commit, `Binaries:`, and `AllowedAPKSigningKeys` when publishing publicly.
