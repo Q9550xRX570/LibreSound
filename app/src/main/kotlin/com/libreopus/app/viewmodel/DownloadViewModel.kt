@@ -8,13 +8,19 @@ import androidx.lifecycle.viewModelScope
 import com.libreopus.app.data.MediaStorageHelper
 import com.libreopus.app.data.PreferencesRepository
 import com.libreopus.app.downloader.AudioFormatPreference
+import com.libreopus.app.downloader.CommandTemplateCodec
+import com.libreopus.app.downloader.CommandTemplateEntry
 import com.libreopus.app.downloader.CookieFileStore
 import com.libreopus.app.downloader.CookieSummary
 import com.libreopus.app.downloader.DownloadExecutionOptions
 import com.libreopus.app.downloader.DownloadPreset
 import com.libreopus.app.downloader.DownloadedArtifact
+import com.libreopus.app.downloader.DownloadedMediaItem
+import com.libreopus.app.downloader.FilenameTemplate
 import com.libreopus.app.downloader.MediaTrackPreview
 import com.libreopus.app.downloader.PlatformDownloader
+import com.libreopus.app.downloader.PresetCommandBuilder
+import com.libreopus.app.downloader.YoutubeClientMode
 import com.libreopus.app.downloader.YtDlpClassifiedException
 import com.libreopus.app.downloader.YtDlpEngineStatus
 import com.libreopus.app.downloader.YtDlpErrorClassifier
@@ -22,6 +28,7 @@ import com.libreopus.app.downloader.YtDlpErrorDiagnostic
 import com.libreopus.app.downloader.YtDlpUpdateChannel
 import com.libreopus.app.downloader.YtDlpUpdateOutcome
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,18 +40,36 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+data class SavedMediaEntry(
+    val item: DownloadedMediaItem,
+    val savedPath: String?,
+)
+
 data class DownloadUiState(
     val url: String = "",
     val preset: DownloadPreset = DownloadPreset.BEST_AUDIO,
     val customArgs: String = "-f bestaudio --no-playlist",
     val audioPreference: AudioFormatPreference = AudioFormatPreference.AUTO_BEST,
+    val selectedFormatId: String? = null,
     val useCookies: Boolean = true,
     val cookieSummary: CookieSummary? = null,
     val cookieImportError: String? = null,
+    val allowPlaylist: Boolean = false,
+    val playlistItems: String = "",
+    val filenameTemplate: FilenameTemplate = FilenameTemplate.TITLE,
+    val customOutputTemplate: String = "%(title).80B.%(ext)s",
+    val youtubeClient: YoutubeClientMode = YoutubeClientMode.AUTO,
+    val extraExtractorArgs: String = "",
+    val concurrentFragments: Int = 4,
+    val rateLimit: String = "",
+    val noCheckCertificates: Boolean = false,
+    val writeSubtitles: Boolean = false,
+    val referer: String = "",
     val forceIpv4: Boolean = false,
     val geoBypass: Boolean = true,
     val proxyUrl: String = "",
     val userAgent: String = "",
+    val commandTemplates: List<CommandTemplateEntry> = CommandTemplateCodec.builtInTemplates,
     val updateChannel: YtDlpUpdateChannel = YtDlpUpdateChannel.STABLE,
     val engineStatus: YtDlpEngineStatus = YtDlpEngineStatus(available = false, initialized = false),
     val isUpdatingEngine: Boolean = false,
@@ -59,6 +84,8 @@ data class DownloadUiState(
     val result: DownloadedArtifact? = null,
     val savedAudioPath: String? = null,
     val savedImagePath: String? = null,
+    val savedMediaEntries: List<SavedMediaEntry> = emptyList(),
+    val savedSubtitlePaths: List<String> = emptyList(),
     val errorDiagnostic: YtDlpErrorDiagnostic? = null,
 ) {
     val activeCookiePathOrNull: Boolean
@@ -66,10 +93,21 @@ data class DownloadUiState(
 
     fun toExecutionOptions(cookieFile: File?): DownloadExecutionOptions = DownloadExecutionOptions(
         audioPreference = audioPreference,
+        selectedFormatId = selectedFormatId,
         cookieFilePath = if (useCookies) cookieFile?.absolutePath else null,
         forceIpv4 = forceIpv4,
         geoBypass = geoBypass,
-        allowPlaylist = false,
+        allowPlaylist = allowPlaylist,
+        playlistItems = playlistItems,
+        filenameTemplate = filenameTemplate,
+        customOutputTemplate = customOutputTemplate,
+        youtubeClient = youtubeClient,
+        extraExtractorArgs = extraExtractorArgs,
+        concurrentFragments = concurrentFragments,
+        rateLimit = rateLimit,
+        noCheckCertificates = noCheckCertificates,
+        writeSubtitles = writeSubtitles,
+        referer = referer,
         userAgent = userAgent,
         proxyUrl = proxyUrl,
     )
@@ -93,12 +131,30 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             val engineStatus = runCatching { downloader.getEngineStatus(ctx) }
                 .getOrDefault(YtDlpEngineStatus(available = downloader.isAvailable, initialized = false))
 
+            val savedTemplates = prefs?.ytdlpCommandTemplatesJson
+                ?.let { CommandTemplateCodec.decode(it) }
+                .orEmpty()
+
             _state.update { st ->
                 st.copy(
                     useCookies = prefs?.ytdlpUseCookies ?: st.useCookies,
                     audioPreference = runCatching {
                         AudioFormatPreference.valueOf(prefs?.ytdlpAudioPreference ?: "")
                     }.getOrDefault(st.audioPreference),
+                    allowPlaylist = prefs?.ytdlpAllowPlaylist ?: st.allowPlaylist,
+                    filenameTemplate = runCatching {
+                        FilenameTemplate.valueOf(prefs?.ytdlpFilenameTemplate ?: "")
+                    }.getOrDefault(st.filenameTemplate),
+                    customOutputTemplate = prefs?.ytdlpCustomFilenameTemplate ?: st.customOutputTemplate,
+                    youtubeClient = runCatching {
+                        YoutubeClientMode.valueOf(prefs?.ytdlpYoutubeClient ?: "")
+                    }.getOrDefault(st.youtubeClient),
+                    concurrentFragments = prefs?.ytdlpConcurrentFragments ?: st.concurrentFragments,
+                    noCheckCertificates = prefs?.ytdlpNoCheckCerts ?: st.noCheckCertificates,
+                    writeSubtitles = prefs?.ytdlpWriteSubs ?: st.writeSubtitles,
+                    rateLimit = prefs?.ytdlpRateLimit ?: st.rateLimit,
+                    extraExtractorArgs = prefs?.ytdlpExtraExtractorArgs ?: st.extraExtractorArgs,
+                    referer = prefs?.ytdlpReferer ?: st.referer,
                     forceIpv4 = prefs?.ytdlpForceIpv4 ?: st.forceIpv4,
                     geoBypass = prefs?.ytdlpGeoBypass ?: st.geoBypass,
                     proxyUrl = prefs?.ytdlpProxyUrl ?: st.proxyUrl,
@@ -107,6 +163,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                         YtDlpUpdateChannel.valueOf(prefs?.ytdlpUpdateChannel ?: "")
                     }.getOrDefault(st.updateChannel),
                     customArgs = prefs?.ytdlpCustomArgs ?: st.customArgs,
+                    commandTemplates = CommandTemplateCodec.builtInTemplates + savedTemplates,
                     cookieSummary = cookies,
                     engineStatus = engineStatus,
                 )
@@ -121,12 +178,17 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 url = url,
                 errorDiagnostic = null,
                 preview = if (urlChanged) null else st.preview,
+                selectedFormatId = if (urlChanged) null else st.selectedFormatId,
             )
         }
     }
 
     fun selectPreset(preset: DownloadPreset) {
         _state.update { it.copy(preset = preset) }
+    }
+
+    fun selectFormatId(formatId: String?) {
+        _state.update { it.copy(selectedFormatId = formatId?.takeIf { f -> f.isNotBlank() }) }
     }
 
     fun setCustomArgs(args: String) {
@@ -140,14 +202,110 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         setCustomArgs(updated)
     }
 
+    fun promotePresetToCustomScript() {
+        val st = _state.value
+        val exported = PresetCommandBuilder.exportAsCustomCommand(
+            preset = st.preset,
+            customArgs = st.customArgs,
+            execOptions = st.toExecutionOptions(null),
+        )
+        _state.update { it.copy(preset = DownloadPreset.CUSTOM_SCRIPT, customArgs = exported) }
+        viewModelScope.launch { prefsRepo.setYtdlpCustomArgs(exported) }
+    }
+
+    fun applyCommandTemplate(entry: CommandTemplateEntry) {
+        _state.update { it.copy(preset = DownloadPreset.CUSTOM_SCRIPT, customArgs = entry.args) }
+        viewModelScope.launch { prefsRepo.setYtdlpCustomArgs(entry.args) }
+    }
+
+    fun saveCommandTemplate(name: String, args: String = _state.value.customArgs) {
+        val cleanName = name.trim()
+        val cleanArgs = args.trim()
+        if (cleanName.isBlank() || cleanArgs.isBlank()) return
+        val newEntry = CommandTemplateEntry(
+            id = UUID.randomUUID().toString(),
+            name = cleanName,
+            args = cleanArgs,
+            builtIn = false,
+        )
+        val userTemplates = _state.value.commandTemplates.filterNot { it.builtIn } + newEntry
+        _state.update { it.copy(commandTemplates = CommandTemplateCodec.builtInTemplates + userTemplates) }
+        viewModelScope.launch {
+            prefsRepo.setYtdlpCommandTemplatesJson(CommandTemplateCodec.encode(userTemplates))
+        }
+    }
+
+    fun deleteCommandTemplate(id: String) {
+        val userTemplates = _state.value.commandTemplates.filter { !it.builtIn && it.id != id }
+        _state.update { it.copy(commandTemplates = CommandTemplateCodec.builtInTemplates + userTemplates) }
+        viewModelScope.launch {
+            prefsRepo.setYtdlpCommandTemplatesJson(CommandTemplateCodec.encode(userTemplates))
+        }
+    }
+
     fun setAudioPreference(pref: AudioFormatPreference) {
-        _state.update { it.copy(audioPreference = pref) }
+        _state.update { it.copy(audioPreference = pref, selectedFormatId = null) }
         viewModelScope.launch { prefsRepo.setYtdlpAudioPreference(pref.name) }
     }
 
     fun setUseCookies(enabled: Boolean) {
         _state.update { it.copy(useCookies = enabled, errorDiagnostic = null) }
         viewModelScope.launch { prefsRepo.setYtdlpUseCookies(enabled) }
+    }
+
+    fun setAllowPlaylist(enabled: Boolean) {
+        _state.update { it.copy(allowPlaylist = enabled, preview = null) }
+        viewModelScope.launch { prefsRepo.setYtdlpAllowPlaylist(enabled) }
+    }
+
+    fun setPlaylistItems(items: String) {
+        _state.update { it.copy(playlistItems = items) }
+    }
+
+    fun setFilenameTemplate(template: FilenameTemplate) {
+        _state.update { it.copy(filenameTemplate = template) }
+        viewModelScope.launch { prefsRepo.setYtdlpFilenameTemplate(template.name) }
+    }
+
+    fun setCustomOutputTemplate(pattern: String) {
+        _state.update { it.copy(customOutputTemplate = pattern) }
+        viewModelScope.launch { prefsRepo.setYtdlpCustomFilenameTemplate(pattern) }
+    }
+
+    fun setYoutubeClient(client: YoutubeClientMode) {
+        _state.update { it.copy(youtubeClient = client, errorDiagnostic = null) }
+        viewModelScope.launch { prefsRepo.setYtdlpYoutubeClient(client.name) }
+    }
+
+    fun setConcurrentFragments(count: Int) {
+        val clamped = count.coerceIn(1, 8)
+        _state.update { it.copy(concurrentFragments = clamped) }
+        viewModelScope.launch { prefsRepo.setYtdlpConcurrentFragments(clamped) }
+    }
+
+    fun setNoCheckCertificates(enabled: Boolean) {
+        _state.update { it.copy(noCheckCertificates = enabled) }
+        viewModelScope.launch { prefsRepo.setYtdlpNoCheckCerts(enabled) }
+    }
+
+    fun setWriteSubtitles(enabled: Boolean) {
+        _state.update { it.copy(writeSubtitles = enabled) }
+        viewModelScope.launch { prefsRepo.setYtdlpWriteSubs(enabled) }
+    }
+
+    fun setRateLimit(limit: String) {
+        _state.update { it.copy(rateLimit = limit) }
+        viewModelScope.launch { prefsRepo.setYtdlpRateLimit(limit) }
+    }
+
+    fun setExtraExtractorArgs(args: String) {
+        _state.update { it.copy(extraExtractorArgs = args) }
+        viewModelScope.launch { prefsRepo.setYtdlpExtraExtractorArgs(args) }
+    }
+
+    fun setReferer(referer: String) {
+        _state.update { it.copy(referer = referer) }
+        viewModelScope.launch { prefsRepo.setYtdlpReferer(referer) }
     }
 
     fun setForceIpv4(enabled: Boolean) {
@@ -247,14 +405,6 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun refreshEngineStatus() {
-        val ctx = getApplication<Application>()
-        viewModelScope.launch {
-            val status = runCatching { downloader.getEngineStatus(ctx) }.getOrNull() ?: return@launch
-            _state.update { it.copy(engineStatus = status) }
-        }
-    }
-
     fun updateEngine(channel: YtDlpUpdateChannel = _state.value.updateChannel) {
         if (_state.value.isUpdatingEngine || !downloader.isAvailable) return
         val ctx = getApplication<Application>()
@@ -302,6 +452,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 it.copy(
                     isFetchingPreview = true,
                     preview = null,
+                    selectedFormatId = null,
                     errorDiagnostic = null,
                 )
             }
@@ -358,6 +509,8 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                     result = null,
                     savedAudioPath = null,
                     savedImagePath = null,
+                    savedMediaEntries = emptyList(),
+                    savedSubtitlePaths = emptyList(),
                     errorDiagnostic = null,
                 )
             }
@@ -375,7 +528,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                     options = execOpts,
                 ) { pct, eta, line ->
                     _state.update { st ->
-                        val nextLogs = if (line.isNotBlank()) (st.logs + line).takeLast(60) else st.logs
+                        val nextLogs = if (line.isNotBlank()) (st.logs + line).takeLast(80) else st.logs
                         st.copy(
                             progress = (pct / 100f).coerceIn(0f, 1f),
                             etaSeconds = eta,
@@ -384,30 +537,32 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
 
-                val savedAudio = artifact.audioFile?.let { af ->
-                    val ext = af.extension.lowercase()
-                    val mime = when (ext) {
-                        "opus" -> "audio/opus"
-                        "ogg" -> "audio/ogg"
-                        "webm" -> "audio/webm"
-                        "m4a", "aac" -> "audio/mp4"
-                        "mp3" -> "audio/mpeg"
-                        "flac" -> "audio/flac"
-                        "wav" -> "audio/wav"
-                        "mp4" -> "video/mp4"
-                        "mkv" -> "video/x-matroska"
-                        else -> "audio/*"
-                    }
-                    withContext(Dispatchers.IO) {
-                        MediaStorageHelper.saveDownloadedMediaToStorage(ctx, af.name, mime, af)
+                val savedEntries = withContext(Dispatchers.IO) {
+                    artifact.mediaItems.map { media ->
+                        val path = MediaStorageHelper.saveDownloadedMediaToStorage(
+                            context = ctx,
+                            fileName = media.displayName,
+                            mimeType = media.mimeType,
+                            sourceFile = media.file,
+                            isVideo = media.isVideo,
+                        )
+                        SavedMediaEntry(item = media, savedPath = path)
                     }
                 }
+
                 val savedImage = artifact.imageFile?.let { img ->
                     val mime = artifact.imageMimeType ?: "image/jpeg"
                     withContext(Dispatchers.IO) {
                         MediaStorageHelper.saveImageToPictures(ctx, img.name, mime, img)
                     }
                 }
+
+                val savedSubs = withContext(Dispatchers.IO) {
+                    artifact.subtitleFiles.mapNotNull { sub ->
+                        MediaStorageHelper.saveFileToDownloads(ctx, sub.name, "text/plain", sub)
+                    }
+                }
+
                 val status = runCatching { downloader.getEngineStatus(ctx) }.getOrNull()
 
                 _state.update {
@@ -415,8 +570,10 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                         isRunning = false,
                         progress = 1f,
                         result = artifact,
-                        savedAudioPath = savedAudio,
+                        savedAudioPath = savedEntries.firstOrNull()?.savedPath,
                         savedImagePath = savedImage,
+                        savedMediaEntries = savedEntries,
+                        savedSubtitlePaths = savedSubs,
                         engineStatus = status ?: it.engineStatus,
                     )
                 }
@@ -428,7 +585,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                     ?: YtDlpErrorClassifier.classify(t.localizedMessage ?: "Download failed")
                 _state.update { st ->
                     val nextLogs = if (diag.rawDetails.isNotBlank()) {
-                        (st.logs + diag.rawDetails.lines().filter { it.isNotBlank() }).takeLast(60)
+                        (st.logs + diag.rawDetails.lines().filter { it.isNotBlank() }).takeLast(80)
                     } else {
                         st.logs
                     }

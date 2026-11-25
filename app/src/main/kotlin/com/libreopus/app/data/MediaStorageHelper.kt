@@ -92,20 +92,33 @@ object MediaStorageHelper {
     }
 
     /**
-     * Saves downloaded audio/media into `Music/LibreOpus` when accepted by MediaStore Audio,
-     * falling back seamlessly to `Download/LibreOpus` for containers like WebM/MKV/MP4.
+     * Saves downloaded audio/video into `Music/LibreOpus` or `Movies/LibreOpus` when accepted by MediaStore,
+     * falling back seamlessly to `Download/LibreOpus` for containers like WebM/MKV.
      */
     fun saveDownloadedMediaToStorage(
         context: Context,
         fileName: String,
         mimeType: String,
         sourceFile: File,
-    ): String? {
-        val preferDownloads = mimeType.startsWith("video/") ||
+        isVideo: Boolean = mimeType.startsWith("video/") ||
             fileName.endsWith(".mp4", ignoreCase = true) ||
-            fileName.endsWith(".mkv", ignoreCase = true)
-
-        if (!preferDownloads) {
+            fileName.endsWith(".mkv", ignoreCase = true),
+    ): String? {
+        if (isVideo) {
+            val videoSaved = insertAndWrite(
+                context = context,
+                collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                relativePath = "${Environment.DIRECTORY_MOVIES}/LibreOpus",
+                displayNameCol = MediaStore.Video.Media.DISPLAY_NAME,
+                mimeTypeCol = MediaStore.Video.Media.MIME_TYPE,
+                relativePathCol = MediaStore.Video.Media.RELATIVE_PATH,
+                isPendingCol = MediaStore.Video.Media.IS_PENDING,
+                fileName = fileName,
+                mimeType = if (mimeType.startsWith("video/")) mimeType else "video/mp4",
+                sourceFile = sourceFile,
+            )
+            if (videoSaved) return "Movies/LibreOpus/$fileName"
+        } else {
             val musicSaved = insertAndWrite(
                 context = context,
                 collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
@@ -121,6 +134,15 @@ object MediaStorageHelper {
             if (musicSaved) return "Music/LibreOpus/$fileName"
         }
 
+        return saveFileToDownloads(context, fileName, mimeType, sourceFile)
+    }
+
+    fun saveFileToDownloads(
+        context: Context,
+        fileName: String,
+        mimeType: String,
+        sourceFile: File,
+    ): String? {
         val downloadMime = if (mimeType == "audio/*" || mimeType.isBlank()) "application/octet-stream" else mimeType
         val dlSaved = insertAndWrite(
             context = context,

@@ -9,6 +9,7 @@ enum class DownloadPreset {
     BEST_AUDIO,
     IMAGE_ONLY,
     AUDIO_AND_IMAGE,
+    VIDEO_MUXED,
     CUSTOM_SCRIPT,
 }
 
@@ -16,6 +17,23 @@ enum class AudioFormatPreference(val formatSelector: String) {
     AUTO_BEST("bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio"),
     OPUS_WEBM("bestaudio[ext=webm]/bestaudio[acodec*=opus]/bestaudio"),
     M4A_AAC("bestaudio[ext=m4a]/bestaudio[acodec*=mp4a]/bestaudio"),
+}
+
+enum class FilenameTemplate(val pattern: String) {
+    TITLE("%(title).80B.%(ext)s"),
+    UPLOADER_TITLE("%(uploader).40B - %(title).70B.%(ext)s"),
+    PLAYLIST_INDEX_TITLE("%(playlist_index)02d - %(title).70B.%(ext)s"),
+    ID_ONLY("%(id)s.%(ext)s"),
+    CUSTOM(""),
+}
+
+enum class YoutubeClientMode(val clientArg: String) {
+    AUTO(""),
+    ANDROID("android"),
+    IOS("ios"),
+    WEB_SAFARI("web_safari"),
+    MWEB("mweb"),
+    TV("tv"),
 }
 
 enum class YtDlpUpdateChannel {
@@ -42,16 +60,131 @@ data class YtDlpUpdateOutcome(
     val versionName: String? = null,
 )
 
+data class CommandTemplateEntry(
+    val id: String,
+    val name: String,
+    val args: String,
+    val builtIn: Boolean = false,
+)
+
+object CommandTemplateCodec {
+    val builtInTemplates: List<CommandTemplateEntry> = listOf(
+        CommandTemplateEntry(
+            id = "builtin_best_audio",
+            name = "Best Audio + Info",
+            args = "-f bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio --no-playlist --write-info-json",
+            builtIn = true,
+        ),
+        CommandTemplateEntry(
+            id = "builtin_video_720",
+            name = "Video 720p MP4",
+            args = "-f \"best[height<=720][ext=mp4][acodec!=none][vcodec!=none]/best[ext=mp4]/best\" --no-playlist",
+            builtIn = true,
+        ),
+        CommandTemplateEntry(
+            id = "builtin_audio_subs",
+            name = "Audio + Subtitles",
+            args = "-f bestaudio --write-subs --write-auto-subs --sub-langs tr,en --no-playlist",
+            builtIn = true,
+        ),
+        CommandTemplateEntry(
+            id = "builtin_playlist_10",
+            name = "Playlist Audio (1-10)",
+            args = "-f bestaudio --yes-playlist --playlist-items 1-10 --ignore-errors",
+            builtIn = true,
+        ),
+    )
+
+    fun encode(templates: List<CommandTemplateEntry>): String {
+        val sb = StringBuilder("[")
+        templates.forEachIndexed { idx, t ->
+            if (idx > 0) sb.append(',')
+            sb.append("{\"id\":\"").append(escapeJson(t.id))
+                .append("\",\"name\":\"").append(escapeJson(t.name))
+                .append("\",\"args\":\"").append(escapeJson(t.args)).append("\"}")
+        }
+        sb.append(']')
+        return sb.toString()
+    }
+
+    fun decode(raw: String): List<CommandTemplateEntry> {
+        if (raw.isBlank()) return emptyList()
+        val parsed = runCatching { SimpleJsonParser.parse(raw) as? List<*> }.getOrNull() ?: return emptyList()
+        return parsed.mapNotNull { entry ->
+            val map = entry as? Map<*, *> ?: return@mapNotNull null
+            val id = map["id"]?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val name = map["name"]?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val args = map["args"]?.toString().orEmpty()
+            CommandTemplateEntry(id = id, name = name, args = args, builtIn = false)
+        }
+    }
+
+    private fun escapeJson(s: String): String = buildString(s.length) {
+        for (ch in s) {
+            when (ch) {
+                '\\' -> append("\\\\")
+                '"' -> append("\\\"")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> append(ch)
+            }
+        }
+    }
+}
+
 data class DownloadExecutionOptions(
     val audioPreference: AudioFormatPreference = AudioFormatPreference.AUTO_BEST,
+    val selectedFormatId: String? = null,
     val cookieFilePath: String? = null,
     val forceIpv4: Boolean = false,
     val geoBypass: Boolean = true,
     val allowPlaylist: Boolean = false,
+    val playlistItems: String = "",
+    val filenameTemplate: FilenameTemplate = FilenameTemplate.TITLE,
+    val customOutputTemplate: String = "%(title).80B.%(ext)s",
+    val youtubeClient: YoutubeClientMode = YoutubeClientMode.AUTO,
+    val extraExtractorArgs: String = "",
+    val concurrentFragments: Int = 4,
+    val rateLimit: String = "",
+    val noCheckCertificates: Boolean = false,
+    val writeSubtitles: Boolean = false,
+    val referer: String = "",
     val userAgent: String = "",
     val proxyUrl: String = "",
     val socketTimeoutSec: Int = 20,
     val retries: Int = 3,
+)
+
+data class MediaFormatOption(
+    val formatId: String,
+    val ext: String,
+    val vcodec: String,
+    val acodec: String,
+    val resolution: String,
+    val abrKbps: Int,
+    val tbrKbps: Int,
+    val asrHz: Int,
+    val height: Int,
+    val formatNote: String,
+    val fileSizeBytes: Long,
+) {
+    val isAudioOnly: Boolean
+        get() = acodec.isNotBlank() && acodec != "none" && (vcodec.isBlank() || vcodec == "none")
+
+    val isMuxedVideo: Boolean
+        get() = acodec.isNotBlank() && acodec != "none" && vcodec.isNotBlank() && vcodec != "none"
+
+    val isVideoOnly: Boolean
+        get() = vcodec.isNotBlank() && vcodec != "none" && (acodec.isBlank() || acodec == "none")
+}
+
+data class PlaylistPreviewEntry(
+    val index: Int,
+    val title: String,
+    val uploader: String = "",
+    val durationSec: Int = 0,
+    val url: String = "",
 )
 
 data class MediaTrackPreview(
@@ -63,6 +196,11 @@ data class MediaTrackPreview(
     val extractor: String? = null,
     val audioExt: String? = null,
     val approxFileSizeBytes: Long = 0L,
+    val formats: List<MediaFormatOption> = emptyList(),
+    val isPlaylist: Boolean = false,
+    val playlistTitle: String = "",
+    val playlistCount: Int = 0,
+    val playlistEntries: List<PlaylistPreviewEntry> = emptyList(),
 )
 
 enum class YtDlpErrorKind {
@@ -87,6 +225,14 @@ class YtDlpClassifiedException(
     cause: Throwable? = null,
 ) : Exception(diagnostic.rawDetails.ifBlank { cause?.message ?: "Download failed" }, cause)
 
+data class DownloadedMediaItem(
+    val file: File,
+    val displayName: String,
+    val isVideo: Boolean,
+    val mimeType: String,
+    val metadata: AudioMetadata? = null,
+)
+
 data class DownloadedArtifact(
     val audioFile: File? = null,
     val audioDisplayName: String? = null,
@@ -95,6 +241,9 @@ data class DownloadedArtifact(
     val imageMimeType: String? = null,
     val metadata: AudioMetadata? = null,
     val sourceUrl: String? = null,
+    val mediaItems: List<DownloadedMediaItem> = emptyList(),
+    val imageFiles: List<File> = emptyList(),
+    val subtitleFiles: List<File> = emptyList(),
 )
 
 interface MediaDownloader {
@@ -130,6 +279,9 @@ data class YtDlpCommandPlan(
 
 object PresetCommandBuilder {
 
+    const val VIDEO_MUXED_SELECTOR =
+        "best[ext=mp4][acodec!=none][vcodec!=none]/best[acodec!=none][vcodec!=none]/best"
+
     private val valueFlags = setOf(
         "-f", "--format", "-S", "--format-sort",
         "-o", "--output", "-P", "--paths",
@@ -137,11 +289,33 @@ object PresetCommandBuilder {
         "--user-agent", "--referer", "--proxy",
         "--socket-timeout", "--retries", "--fragment-retries",
         "--limit-rate", "-r", "--throttled-rate",
-        "--playlist-items", "--max-downloads",
-        "--extractor-args", "--add-headers",
+        "--playlist-items", "-I", "--max-downloads",
+        "--extractor-args", "--add-headers", "--add-header",
         "--audio-format", "--audio-quality",
         "--sub-langs", "--sleep-requests", "--sleep-interval",
+        "-N", "--concurrent-fragments",
+        "--match-filter", "--compat-options",
     )
+
+    fun parseUrls(rawInput: String): List<String> = rawInput
+        .lineSequence()
+        .flatMap { it.trim().split(Regex("\\s+")).asSequence() }
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .toList()
+
+    fun resolveOutputTemplate(workDir: File, execOptions: DownloadExecutionOptions): String {
+        val rawPattern = when (execOptions.filenameTemplate) {
+            FilenameTemplate.CUSTOM -> execOptions.customOutputTemplate.trim()
+            else -> execOptions.filenameTemplate.pattern
+        }.ifBlank { FilenameTemplate.TITLE.pattern }
+        val sanitized = rawPattern
+            .replace("..", "")
+            .trimStart('/', '\\')
+            .ifBlank { FilenameTemplate.TITLE.pattern }
+        return File(workDir, sanitized).absolutePath
+    }
 
     fun buildExecutionPlan(
         preset: DownloadPreset,
@@ -158,10 +332,17 @@ object PresetCommandBuilder {
             val hasToken: (String) -> Boolean = { flag ->
                 existingTokens.any { it == flag || it.startsWith("$flag=") }
             }
-            if (includePlaylistFlag && !execOptions.allowPlaylist &&
-                !hasToken("--no-playlist") && !hasToken("--yes-playlist")
-            ) {
-                opts += "--no-playlist" to null
+            if (includePlaylistFlag && !hasToken("--no-playlist") && !hasToken("--yes-playlist")) {
+                if (execOptions.allowPlaylist) {
+                    opts += "--yes-playlist" to null
+                    opts += "--ignore-errors" to null
+                    val items = execOptions.playlistItems.trim()
+                    if (items.isNotBlank() && !hasToken("--playlist-items") && !hasToken("-I")) {
+                        opts += "--playlist-items" to items
+                    }
+                } else {
+                    opts += "--no-playlist" to null
+                }
             }
             if (!hasToken("--retries") && !hasToken("-R")) {
                 opts += "--retries" to execOptions.retries.coerceIn(1, 10).toString()
@@ -172,11 +353,21 @@ object PresetCommandBuilder {
             if (!hasToken("--socket-timeout")) {
                 opts += "--socket-timeout" to execOptions.socketTimeoutSec.coerceIn(5, 120).toString()
             }
+            if (execOptions.concurrentFragments > 1 && !hasToken("-N") && !hasToken("--concurrent-fragments")) {
+                opts += "-N" to execOptions.concurrentFragments.coerceIn(1, 8).toString()
+            }
+            val rate = execOptions.rateLimit.trim()
+            if (rate.isNotBlank() && !hasToken("-r") && !hasToken("--limit-rate")) {
+                opts += "--limit-rate" to rate
+            }
             if (execOptions.forceIpv4 && !hasToken("--force-ipv4") && !hasToken("-4")) {
                 opts += "--force-ipv4" to null
             }
             if (execOptions.geoBypass && !hasToken("--geo-bypass")) {
                 opts += "--geo-bypass" to null
+            }
+            if (execOptions.noCheckCertificates && !hasToken("--no-check-certificates")) {
+                opts += "--no-check-certificates" to null
             }
             val cookiePath = execOptions.cookieFilePath?.takeIf { it.isNotBlank() }
             if (cookiePath != null && !hasToken("--cookies")) {
@@ -186,18 +377,40 @@ object PresetCommandBuilder {
             if (ua.isNotBlank() && !hasToken("--user-agent")) {
                 opts += "--user-agent" to ua
             }
+            val referer = execOptions.referer.trim()
+            if (referer.isNotBlank() && !hasToken("--referer")) {
+                opts += "--referer" to referer
+            }
             val proxy = execOptions.proxyUrl.trim()
             if (proxy.isNotBlank() && !hasToken("--proxy")) {
                 opts += "--proxy" to proxy
+            }
+            if (!hasToken("--extractor-args")) {
+                buildExtractorArgsString(execOptions)?.let { extArg ->
+                    opts += "--extractor-args" to extArg
+                }
+            }
+            if (execOptions.writeSubtitles && preset != DownloadPreset.IMAGE_ONLY && preset != DownloadPreset.CUSTOM_SCRIPT) {
+                if (!hasToken("--write-subs")) opts += "--write-subs" to null
+                if (!hasToken("--write-auto-subs")) opts += "--write-auto-subs" to null
+                if (!hasToken("--sub-langs")) opts += "--sub-langs" to "tr,en"
             }
             if (!hasToken("--newline")) {
                 opts += "--newline" to null
             }
         }
 
+        val formatSelector = execOptions.selectedFormatId
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: when (preset) {
+                DownloadPreset.VIDEO_MUXED -> VIDEO_MUXED_SELECTOR
+                else -> execOptions.audioPreference.formatSelector
+            }
+
         return when (preset) {
             DownloadPreset.BEST_AUDIO -> {
-                opts += "-f" to execOptions.audioPreference.formatSelector
+                opts += "-f" to formatSelector
                 opts += "--write-info-json" to null
                 opts += "--no-mtime" to null
                 opts += "--restrict-filenames" to null
@@ -216,7 +429,17 @@ object PresetCommandBuilder {
                 YtDlpCommandPlan(options = opts)
             }
             DownloadPreset.AUDIO_AND_IMAGE -> {
-                opts += "-f" to execOptions.audioPreference.formatSelector
+                opts += "-f" to formatSelector
+                opts += "--write-thumbnail" to null
+                opts += "--write-info-json" to null
+                opts += "--no-mtime" to null
+                opts += "--restrict-filenames" to null
+                addSharedNetworkAndCookieOpts()
+                opts += "-o" to outputTemplate
+                YtDlpCommandPlan(options = opts)
+            }
+            DownloadPreset.VIDEO_MUXED -> {
+                opts += "-f" to formatSelector
                 opts += "--write-thumbnail" to null
                 opts += "--write-info-json" to null
                 opts += "--no-mtime" to null
@@ -237,6 +460,20 @@ object PresetCommandBuilder {
                 }
                 YtDlpCommandPlan(options = opts, rawCommands = tokens)
             }
+        }
+    }
+
+    fun buildExtractorArgsString(execOptions: DownloadExecutionOptions): String? {
+        val extra = execOptions.extraExtractorArgs.trim()
+        val client = execOptions.youtubeClient.clientArg
+        if (client.isBlank() && extra.isBlank()) return null
+        return when {
+            client.isNotBlank() && extra.isBlank() -> "youtube:player_client=$client"
+            client.isBlank() -> if (extra.contains(':')) extra else "youtube:$extra"
+            extra.startsWith("youtube:", ignoreCase = true) ->
+                "youtube:player_client=$client;${extra.substringAfter(':')}"
+            !extra.contains(':') -> "youtube:player_client=$client;$extra"
+            else -> "youtube:player_client=$client"
         }
     }
 
@@ -275,24 +512,60 @@ object PresetCommandBuilder {
         return merged
     }
 
+    fun exportAsCustomCommand(
+        preset: DownloadPreset,
+        customArgs: String,
+        execOptions: DownloadExecutionOptions = DownloadExecutionOptions(),
+    ): String {
+        if (preset == DownloadPreset.CUSTOM_SCRIPT && customArgs.isNotBlank()) return customArgs
+        val plan = buildExecutionPlan(
+            preset = preset,
+            customArgs = customArgs,
+            outputTemplate = "",
+            execOptions = execOptions.copy(cookieFilePath = null),
+        )
+        return plan.options
+            .filterNot { it.first == "-o" || it.first == "--newline" }
+            .joinToString(" ") { (flag, value) ->
+                if (value == null) {
+                    flag
+                } else if (value.any { it.isWhitespace() || it == ';' || it == '<' || it == '>' }) {
+                    "$flag \"$value\""
+                } else {
+                    "$flag $value"
+                }
+            }
+    }
+
     fun formatPreview(
         preset: DownloadPreset,
         execOptions: DownloadExecutionOptions = DownloadExecutionOptions(),
     ): String {
         val parts = mutableListOf<String>()
+        val selected = execOptions.selectedFormatId?.trim()?.takeIf { it.isNotBlank() }
         when (preset) {
-            DownloadPreset.BEST_AUDIO -> parts += "-f ${execOptions.audioPreference.formatSelector}"
+            DownloadPreset.BEST_AUDIO -> parts += "-f ${selected ?: execOptions.audioPreference.formatSelector}"
             DownloadPreset.IMAGE_ONLY -> parts += "--skip-download --write-thumbnail"
-            DownloadPreset.AUDIO_AND_IMAGE -> parts += "-f ${execOptions.audioPreference.formatSelector} --write-thumbnail"
+            DownloadPreset.AUDIO_AND_IMAGE -> parts += "-f ${selected ?: execOptions.audioPreference.formatSelector} --write-thumbnail"
+            DownloadPreset.VIDEO_MUXED -> parts += "-f ${selected ?: VIDEO_MUXED_SELECTOR} --write-thumbnail"
             DownloadPreset.CUSTOM_SCRIPT -> Unit
         }
-        if (preset != DownloadPreset.CUSTOM_SCRIPT && !execOptions.allowPlaylist) {
-            parts += "--no-playlist"
+        if (preset != DownloadPreset.CUSTOM_SCRIPT) {
+            if (execOptions.allowPlaylist) {
+                parts += "--yes-playlist"
+                execOptions.playlistItems.trim().takeIf { it.isNotBlank() }?.let { parts += "--playlist-items $it" }
+            } else {
+                parts += "--no-playlist"
+            }
         }
-        if (!execOptions.cookieFilePath.isNullOrBlank()) {
-            parts += "--cookies <active>"
+        if (!execOptions.cookieFilePath.isNullOrBlank()) parts += "--cookies <active>"
+        if (execOptions.youtubeClient != YoutubeClientMode.AUTO) {
+            parts += "--extractor-args youtube:player_client=${execOptions.youtubeClient.clientArg}"
         }
+        if (execOptions.concurrentFragments > 1) parts += "-N ${execOptions.concurrentFragments}"
         if (execOptions.forceIpv4) parts += "--force-ipv4"
+        if (execOptions.noCheckCertificates) parts += "--no-check-certificates"
+        if (execOptions.writeSubtitles && preset != DownloadPreset.IMAGE_ONLY) parts += "--write-subs"
         if (execOptions.proxyUrl.isNotBlank()) parts += "--proxy ${execOptions.proxyUrl.trim()}"
         return parts.joinToString(" ")
     }
@@ -322,6 +595,131 @@ object PresetCommandBuilder {
         }
         if (cur.isNotEmpty()) out += cur.toString()
         return out
+    }
+}
+
+object DumpJsonPreviewParser {
+
+    fun parse(
+        jsonText: String,
+        sourceUrl: String,
+        audioPreference: AudioFormatPreference = AudioFormatPreference.AUTO_BEST,
+    ): MediaTrackPreview? {
+        val root = runCatching { SimpleJsonParser.parse(jsonText) as? Map<*, *> }.getOrNull() ?: return null
+
+        val type = root["_type"]?.toString().orEmpty()
+        val entriesRaw = (root["entries"] as? List<*>)?.mapNotNull { it as? Map<*, *> }.orEmpty()
+        if (type == "playlist" || entriesRaw.isNotEmpty()) {
+            val playlistTitle = root["title"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+                ?: "Playlist"
+            val entries = entriesRaw.mapIndexed { idx, e ->
+                PlaylistPreviewEntry(
+                    index = (e["playlist_index"] as? Number)?.toInt() ?: (idx + 1),
+                    title = e["title"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+                        ?: "Track ${idx + 1}",
+                    uploader = listOf("uploader", "channel", "creator")
+                        .firstNotNullOfOrNull { k -> e[k]?.toString()?.takeIf { it.isNotBlank() && it != "null" } }
+                        .orEmpty(),
+                    durationSec = ((e["duration"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+                    url = e["url"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+                        ?: e["webpage_url"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+                        ?: "",
+                )
+            }
+            val totalCount = ((root["playlist_count"] as? Number)?.toInt() ?: entries.size).coerceAtLeast(entries.size)
+            val uploader = listOf("uploader", "channel", "playlist_uploader")
+                .firstNotNullOfOrNull { k -> root[k]?.toString()?.takeIf { it.isNotBlank() && it != "null" } }
+                .orEmpty()
+            return MediaTrackPreview(
+                title = playlistTitle,
+                uploader = uploader,
+                durationSec = entries.sumOf { it.durationSec },
+                webpageUrl = root["webpage_url"]?.toString()?.takeIf { it.isNotBlank() && it != "null" } ?: sourceUrl,
+                extractor = root["extractor_key"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+                    ?: root["extractor"]?.toString()?.takeIf { it.isNotBlank() && it != "null" },
+                isPlaylist = true,
+                playlistTitle = playlistTitle,
+                playlistCount = totalCount,
+                playlistEntries = entries,
+            )
+        }
+
+        val parsedFormats = ((root["formats"] as? List<*>).orEmpty())
+            .mapNotNull { it as? Map<*, *> }
+            .mapNotNull { f ->
+                val formatId = f["format_id"]?.toString()?.trim().orEmpty()
+                val ext = f["ext"]?.toString()?.trim().orEmpty()
+                val note = f["format_note"]?.toString()?.takeIf { it != "null" }.orEmpty()
+                if (formatId.isBlank() || ext.isBlank() || note.contains("storyboard", ignoreCase = true) || ext == "mhtml") {
+                    return@mapNotNull null
+                }
+                val vcodec = f["vcodec"]?.toString()?.takeIf { it != "null" }.orEmpty()
+                val acodec = f["acodec"]?.toString()?.takeIf { it != "null" }.orEmpty()
+                val height = (f["height"] as? Number)?.toInt() ?: 0
+                val resolution = f["resolution"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+                    ?: if (height > 0) "${height}p" else if (vcodec == "none" || vcodec.isBlank()) "audio only" else ""
+                val size = ((f["filesize"] as? Number)?.toLong()?.takeIf { it > 0L }
+                    ?: (f["filesize_approx"] as? Number)?.toLong()
+                    ?: 0L).coerceAtLeast(0L)
+                MediaFormatOption(
+                    formatId = formatId,
+                    ext = ext,
+                    vcodec = vcodec,
+                    acodec = acodec,
+                    resolution = resolution,
+                    abrKbps = ((f["abr"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+                    tbrKbps = ((f["tbr"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+                    asrHz = ((f["asr"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+                    height = height.coerceAtLeast(0),
+                    formatNote = note,
+                    fileSizeBytes = size,
+                )
+            }
+            .distinctBy { it.formatId }
+
+        val sortedFormats = buildList {
+            addAll(parsedFormats.filter { it.isAudioOnly }.sortedByDescending { maxOf(it.abrKbps, it.tbrKbps) })
+            addAll(parsedFormats.filter { it.isMuxedVideo }.sortedWith(compareByDescending<MediaFormatOption> { it.height }.thenByDescending { it.tbrKbps }))
+            addAll(parsedFormats.filter { it.isVideoOnly }.sortedWith(compareByDescending<MediaFormatOption> { it.height }.thenByDescending { it.tbrKbps }))
+        }
+
+        val audioFormats = sortedFormats.filter { it.isAudioOnly }
+        val preferredExt = when (audioPreference) {
+            AudioFormatPreference.OPUS_WEBM -> "webm"
+            AudioFormatPreference.M4A_AAC -> "m4a"
+            AudioFormatPreference.AUTO_BEST -> null
+        }
+        val bestAudio = audioFormats
+            .filter { preferredExt == null || it.ext.equals(preferredExt, ignoreCase = true) }
+            .maxByOrNull { maxOf(it.abrKbps, it.tbrKbps) }
+            ?: audioFormats.maxByOrNull { maxOf(it.abrKbps, it.tbrKbps) }
+
+        val approxSize = ((bestAudio?.fileSizeBytes?.takeIf { it > 0L })
+            ?: (root["filesize"] as? Number)?.toLong()?.takeIf { it > 0L }
+            ?: (root["filesize_approx"] as? Number)?.toLong()
+            ?: 0L).coerceAtLeast(0L)
+
+        val title = root["title"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+            ?: root["fulltitle"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+            ?: "Media"
+
+        val uploader = listOf("uploader", "channel", "creator")
+            .firstNotNullOfOrNull { key ->
+                root[key]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+            }.orEmpty()
+
+        return MediaTrackPreview(
+            title = title,
+            uploader = uploader,
+            durationSec = ((root["duration"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+            thumbnailUrl = root["thumbnail"]?.toString()?.takeIf { it.isNotBlank() && it != "null" },
+            webpageUrl = root["webpage_url"]?.toString()?.takeIf { it.isNotBlank() && it != "null" } ?: sourceUrl,
+            extractor = root["extractor_key"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+                ?: root["extractor"]?.toString()?.takeIf { it.isNotBlank() && it != "null" },
+            audioExt = bestAudio?.ext ?: root["ext"]?.toString()?.takeIf { it.isNotBlank() && it != "null" },
+            approxFileSizeBytes = approxSize,
+            formats = sortedFormats,
+        )
     }
 }
 

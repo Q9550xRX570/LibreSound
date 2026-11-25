@@ -26,22 +26,28 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
@@ -49,21 +55,26 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -83,7 +94,10 @@ import com.libreopus.app.R
 import com.libreopus.app.data.Formatters
 import com.libreopus.app.downloader.AudioFormatPreference
 import com.libreopus.app.downloader.DownloadPreset
+import com.libreopus.app.downloader.FilenameTemplate
+import com.libreopus.app.downloader.MediaFormatOption
 import com.libreopus.app.downloader.PresetCommandBuilder
+import com.libreopus.app.downloader.YoutubeClientMode
 import com.libreopus.app.downloader.YtDlpErrorDiagnostic
 import com.libreopus.app.downloader.YtDlpErrorKind
 import com.libreopus.app.viewmodel.DownloadUiState
@@ -108,16 +122,24 @@ fun DownloadScreen(
     var showLogs by remember { mutableStateOf(false) }
     var showAdvanced by remember { mutableStateOf(false) }
     var showCookieSheet by remember { mutableStateOf(false) }
+    var showFormatSheet by remember { mutableStateOf(false) }
+    var showSaveTemplateDialog by remember { mutableStateOf(false) }
     var showErrorDetails by remember { mutableStateOf(false) }
 
     val execOptionsPreview = remember(
         state.audioPreference,
+        state.selectedFormatId,
         state.useCookies,
         state.cookieSummary,
+        state.allowPlaylist,
+        state.playlistItems,
+        state.youtubeClient,
+        state.concurrentFragments,
         state.forceIpv4,
         state.geoBypass,
+        state.noCheckCertificates,
+        state.writeSubtitles,
         state.proxyUrl,
-        state.userAgent,
     ) {
         state.toExecutionOptions(
             cookieFile = if (state.activeCookiePathOrNull) File("/cookies.txt") else null,
@@ -138,14 +160,15 @@ fun DownloadScreen(
             )
         }
 
-        // URL Input + Preview Info Action
+        // URL Input (single or multi-line) + Preview & Formats + Cookies
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = state.url,
                     onValueChange = { viewModel.setUrl(it) },
                     label = { Text(stringResource(R.string.download_url_hint)) },
-                    singleLine = true,
+                    minLines = 1,
+                    maxLines = 4,
                     enabled = !state.isRunning,
                     trailingIcon = {
                         Row {
@@ -201,13 +224,14 @@ fun DownloadScreen(
                             } else {
                                 stringResource(R.string.cookies_manage)
                             },
+                            maxLines = 1,
                         )
                     }
                 }
             }
         }
 
-        // Preview Card (when --dump-json succeeded)
+        // Preview + Format Picker / Playlist Preview Card
         val preview = state.preview
         if (preview != null) {
             item {
@@ -219,7 +243,7 @@ fun DownloadScreen(
                 ) {
                     Column(
                         modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
                             text = preview.title,
@@ -228,6 +252,9 @@ fun DownloadScreen(
                             overflow = TextOverflow.Ellipsis,
                         )
                         val metaParts = buildList {
+                            if (preview.isPlaylist) {
+                                add(stringResource(R.string.playlist_count_badge, preview.playlistCount))
+                            }
                             if (preview.uploader.isNotBlank()) add(preview.uploader)
                             if (preview.durationSec > 0) {
                                 add(Formatters.formatDurationMs(preview.durationSec * 1000L, includeMillis = false))
@@ -244,6 +271,53 @@ fun DownloadScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+
+                        if (preview.isPlaylist && preview.playlistEntries.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                preview.playlistEntries.take(5).forEach { entry ->
+                                    Text(
+                                        text = "${entry.index}. ${entry.title}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("1-5", "1-10", "1-25", "").forEach { range ->
+                                    FilterChip(
+                                        selected = state.playlistItems == range,
+                                        onClick = { viewModel.setPlaylistItems(range) },
+                                        label = { Text(if (range.isEmpty()) "Tümü / All" else range) },
+                                    )
+                                }
+                            }
+                        }
+
+                        if (preview.formats.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                FilledTonalButton(
+                                    onClick = { showFormatSheet = true },
+                                    enabled = !state.isRunning,
+                                ) {
+                                    Text(stringResource(R.string.formats_pick_button, preview.formats.size))
+                                }
+                                state.selectedFormatId?.let { fid ->
+                                    InputChip(
+                                        selected = true,
+                                        onClick = { viewModel.selectFormatId(null) },
+                                        label = { Text("#$fid") },
+                                        trailingIcon = {
+                                            Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -318,20 +392,28 @@ fun DownloadScreen(
                     onClick = { viewModel.selectPreset(DownloadPreset.BEST_AUDIO) },
                 )
                 PresetCard(
-                    selected = state.preset == DownloadPreset.IMAGE_ONLY,
-                    enabled = !state.isRunning,
-                    icon = Icons.Rounded.Image,
-                    title = stringResource(R.string.download_preset_image_only),
-                    subtitle = stringResource(R.string.download_preset_image_only_desc),
-                    onClick = { viewModel.selectPreset(DownloadPreset.IMAGE_ONLY) },
-                )
-                PresetCard(
                     selected = state.preset == DownloadPreset.AUDIO_AND_IMAGE,
                     enabled = !state.isRunning,
                     icon = Icons.Rounded.Album,
                     title = stringResource(R.string.download_preset_audio_image),
                     subtitle = stringResource(R.string.download_preset_audio_image_desc),
                     onClick = { viewModel.selectPreset(DownloadPreset.AUDIO_AND_IMAGE) },
+                )
+                PresetCard(
+                    selected = state.preset == DownloadPreset.VIDEO_MUXED,
+                    enabled = !state.isRunning,
+                    icon = Icons.Rounded.Movie,
+                    title = stringResource(R.string.download_preset_video_muxed),
+                    subtitle = stringResource(R.string.download_preset_video_muxed_desc),
+                    onClick = { viewModel.selectPreset(DownloadPreset.VIDEO_MUXED) },
+                )
+                PresetCard(
+                    selected = state.preset == DownloadPreset.IMAGE_ONLY,
+                    enabled = !state.isRunning,
+                    icon = Icons.Rounded.Image,
+                    title = stringResource(R.string.download_preset_image_only),
+                    subtitle = stringResource(R.string.download_preset_image_only_desc),
+                    onClick = { viewModel.selectPreset(DownloadPreset.IMAGE_ONLY) },
                 )
                 PresetCard(
                     selected = state.preset == DownloadPreset.CUSTOM_SCRIPT,
@@ -344,77 +426,154 @@ fun DownloadScreen(
             }
         }
 
-        // Audio format preference or Custom script editor
+        // Format preference or Custom Script & Templates
         item {
             if (state.preset == DownloadPreset.BEST_AUDIO || state.preset == DownloadPreset.AUDIO_AND_IMAGE) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(stringResource(R.string.download_audio_format_label), style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = state.audioPreference == AudioFormatPreference.AUTO_BEST,
-                            onClick = { viewModel.setAudioPreference(AudioFormatPreference.AUTO_BEST) },
-                            enabled = !state.isRunning,
-                            label = { Text(stringResource(R.string.download_format_auto)) },
+                    if (state.selectedFormatId != null) {
+                        AssistChip(
+                            onClick = { showFormatSheet = true },
+                            label = { Text(stringResource(R.string.formats_selected_badge, state.selectedFormatId)) },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = { viewModel.selectFormatId(null) },
+                                    modifier = Modifier.size(18.dp),
+                                ) {
+                                    Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                                }
+                            },
                         )
-                        FilterChip(
-                            selected = state.audioPreference == AudioFormatPreference.OPUS_WEBM,
-                            onClick = { viewModel.setAudioPreference(AudioFormatPreference.OPUS_WEBM) },
-                            enabled = !state.isRunning,
-                            label = { Text(stringResource(R.string.download_format_opus)) },
-                        )
-                        FilterChip(
-                            selected = state.audioPreference == AudioFormatPreference.M4A_AAC,
-                            onClick = { viewModel.setAudioPreference(AudioFormatPreference.M4A_AAC) },
-                            enabled = !state.isRunning,
-                            label = { Text(stringResource(R.string.download_format_m4a)) },
-                        )
+                    } else {
+                        Text(stringResource(R.string.download_audio_format_label), style = MaterialTheme.typography.labelLarge)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = state.audioPreference == AudioFormatPreference.AUTO_BEST,
+                                onClick = { viewModel.setAudioPreference(AudioFormatPreference.AUTO_BEST) },
+                                enabled = !state.isRunning,
+                                label = { Text(stringResource(R.string.download_format_auto)) },
+                            )
+                            FilterChip(
+                                selected = state.audioPreference == AudioFormatPreference.OPUS_WEBM,
+                                onClick = { viewModel.setAudioPreference(AudioFormatPreference.OPUS_WEBM) },
+                                enabled = !state.isRunning,
+                                label = { Text(stringResource(R.string.download_format_opus)) },
+                            )
+                            FilterChip(
+                                selected = state.audioPreference == AudioFormatPreference.M4A_AAC,
+                                onClick = { viewModel.setAudioPreference(AudioFormatPreference.M4A_AAC) },
+                                enabled = !state.isRunning,
+                                label = { Text(stringResource(R.string.download_format_m4a)) },
+                            )
+                        }
                     }
                 }
             }
 
             if (state.preset == DownloadPreset.CUSTOM_SCRIPT) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.download_templates_label), style = MaterialTheme.typography.labelLarge)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        state.commandTemplates.forEach { tmpl ->
+                            InputChip(
+                                selected = state.customArgs.trim() == tmpl.args.trim(),
+                                onClick = { viewModel.applyCommandTemplate(tmpl) },
+                                enabled = !state.isRunning,
+                                label = { Text(tmpl.name) },
+                                trailingIcon = if (!tmpl.builtIn) {
+                                    {
+                                        IconButton(
+                                            onClick = { viewModel.deleteCommandTemplate(tmpl.id) },
+                                            modifier = Modifier.size(18.dp),
+                                        ) {
+                                            Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
+                    }
+
                     OutlinedTextField(
                         value = state.customArgs,
                         onValueChange = { viewModel.setCustomArgs(it) },
                         label = { Text(stringResource(R.string.download_custom_args_label)) },
+                        minLines = 2,
+                        maxLines = 5,
                         enabled = !state.isRunning,
                         modifier = Modifier.fillMaxWidth(),
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(
+                            onClick = { showSaveTemplateDialog = true },
+                            enabled = !state.isRunning && state.customArgs.isNotBlank(),
+                        ) {
+                            Icon(Icons.Rounded.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(stringResource(R.string.download_save_template))
+                        }
+                    }
+
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         val quickFlags = listOf(
                             "--force-ipv4",
-                            "--geo-bypass",
+                            "-N 4",
                             "--write-thumbnail",
+                            "--write-subs",
+                            "--yes-playlist",
                             "--playlist-items 1-5",
-                            "-f bestaudio[ext=m4a]/bestaudio",
+                            "--no-check-certificates",
                         )
                         quickFlags.forEach { flag ->
                             AssistChip(
                                 onClick = { viewModel.appendCustomFlag(flag) },
                                 enabled = !state.isRunning,
-                                label = { Text(flag, style = MaterialTheme.typography.labelSmall) },
+                                label = { Text(flag) },
                             )
                         }
                     }
                 }
             } else {
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    text = stringResource(
-                        R.string.download_command_preview,
-                        PresetCommandBuilder.formatPreview(state.preset, execOptionsPreview),
-                    ),
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.download_command_preview,
+                            PresetCommandBuilder.formatPreview(state.preset, execOptionsPreview),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = { viewModel.promotePresetToCustomScript() },
+                        enabled = !state.isRunning,
+                    ) {
+                        Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(R.string.download_customize_command))
+                    }
+                }
             }
         }
 
-        // Expandable Network / Proxy / Advanced options
+        // Expandable YTDLnis Power, Network & Output Options
         item {
             OutlinedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -447,6 +606,114 @@ fun DownloadScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Icon(Icons.Rounded.PlaylistPlay, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Text(stringResource(R.string.download_allow_playlist))
+                                }
+                                Switch(
+                                    checked = state.allowPlaylist,
+                                    onCheckedChange = { viewModel.setAllowPlaylist(it) },
+                                    enabled = !state.isRunning,
+                                )
+                            }
+
+                            if (state.allowPlaylist) {
+                                OutlinedTextField(
+                                    value = state.playlistItems,
+                                    onValueChange = { viewModel.setPlaylistItems(it) },
+                                    label = { Text(stringResource(R.string.download_playlist_items_label)) },
+                                    singleLine = true,
+                                    enabled = !state.isRunning,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+
+                            Text(stringResource(R.string.download_youtube_client_label), style = MaterialTheme.typography.labelLarge)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                YoutubeClientMode.entries.forEach { mode ->
+                                    val label = when (mode) {
+                                        YoutubeClientMode.AUTO -> stringResource(R.string.download_client_auto)
+                                        YoutubeClientMode.ANDROID -> "Android"
+                                        YoutubeClientMode.IOS -> "iOS"
+                                        YoutubeClientMode.WEB_SAFARI -> "Web Safari"
+                                        YoutubeClientMode.MWEB -> "mWeb"
+                                        YoutubeClientMode.TV -> "TV"
+                                    }
+                                    FilterChip(
+                                        selected = state.youtubeClient == mode,
+                                        onClick = { viewModel.setYoutubeClient(mode) },
+                                        enabled = !state.isRunning,
+                                        label = { Text(label) },
+                                    )
+                                }
+                            }
+
+                            Text(stringResource(R.string.download_filename_template_label), style = MaterialTheme.typography.labelLarge)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilenameTemplate.entries.forEach { tmpl ->
+                                    val label = when (tmpl) {
+                                        FilenameTemplate.TITLE -> stringResource(R.string.download_tmpl_title)
+                                        FilenameTemplate.UPLOADER_TITLE -> stringResource(R.string.download_tmpl_uploader)
+                                        FilenameTemplate.PLAYLIST_INDEX_TITLE -> stringResource(R.string.download_tmpl_playlist)
+                                        FilenameTemplate.ID_ONLY -> stringResource(R.string.download_tmpl_id)
+                                        FilenameTemplate.CUSTOM -> stringResource(R.string.download_tmpl_custom)
+                                    }
+                                    FilterChip(
+                                        selected = state.filenameTemplate == tmpl,
+                                        onClick = { viewModel.setFilenameTemplate(tmpl) },
+                                        enabled = !state.isRunning,
+                                        label = { Text(label) },
+                                    )
+                                }
+                            }
+
+                            if (state.filenameTemplate == FilenameTemplate.CUSTOM) {
+                                OutlinedTextField(
+                                    value = state.customOutputTemplate,
+                                    onValueChange = { viewModel.setCustomOutputTemplate(it) },
+                                    label = { Text(stringResource(R.string.download_custom_template_label)) },
+                                    singleLine = true,
+                                    enabled = !state.isRunning,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+
+                            Text(
+                                stringResource(R.string.download_concurrent_fragments, state.concurrentFragments),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(1, 2, 4, 8).forEach { count ->
+                                    FilterChip(
+                                        selected = state.concurrentFragments == count,
+                                        onClick = { viewModel.setConcurrentFragments(count) },
+                                        enabled = !state.isRunning,
+                                        label = { Text("${count}x") },
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(stringResource(R.string.download_write_subs), modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = state.writeSubtitles,
+                                    onCheckedChange = { viewModel.setWriteSubtitles(it) },
+                                    enabled = !state.isRunning,
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 Text(stringResource(R.string.download_force_ipv4), modifier = Modifier.weight(1f))
                                 Switch(
                                     checked = state.forceIpv4,
@@ -466,6 +733,27 @@ fun DownloadScreen(
                                     enabled = !state.isRunning,
                                 )
                             }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(stringResource(R.string.download_no_check_certs), modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = state.noCheckCertificates,
+                                    onCheckedChange = { viewModel.setNoCheckCertificates(it) },
+                                    enabled = !state.isRunning,
+                                )
+                            }
+
+                            OutlinedTextField(
+                                value = state.rateLimit,
+                                onValueChange = { viewModel.setRateLimit(it) },
+                                label = { Text(stringResource(R.string.download_rate_limit_label)) },
+                                singleLine = true,
+                                enabled = !state.isRunning,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                             OutlinedTextField(
                                 value = state.proxyUrl,
                                 onValueChange = { viewModel.setProxyUrl(it) },
@@ -478,6 +766,22 @@ fun DownloadScreen(
                                 value = state.userAgent,
                                 onValueChange = { viewModel.setUserAgent(it) },
                                 label = { Text(stringResource(R.string.download_user_agent_label)) },
+                                singleLine = true,
+                                enabled = !state.isRunning,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = state.referer,
+                                onValueChange = { viewModel.setReferer(it) },
+                                label = { Text(stringResource(R.string.download_referer_label)) },
+                                singleLine = true,
+                                enabled = !state.isRunning,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = state.extraExtractorArgs,
+                                onValueChange = { viewModel.setExtraExtractorArgs(it) },
+                                label = { Text(stringResource(R.string.download_extractor_args_label)) },
                                 singleLine = true,
                                 enabled = !state.isRunning,
                                 modifier = Modifier.fillMaxWidth(),
@@ -563,9 +867,9 @@ fun DownloadScreen(
             }
         }
 
-        // Result Card
+        // Result Card (Single or Multi-Item / Video / Cover / Subtitles)
         val res = state.result
-        if (res != null && (res.audioFile != null || res.imageFile != null)) {
+        if (res != null && (state.savedMediaEntries.isNotEmpty() || res.imageFile != null || state.savedSubtitlePaths.isNotEmpty())) {
             item {
                 ElevatedCard(
                     colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
@@ -593,73 +897,113 @@ fun DownloadScreen(
                             }
                         }
 
-                        res.metadata?.let { meta ->
-                            if (meta.title.isNotBlank()) {
-                                Text(
-                                    text = meta.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            val byline = listOf(meta.artist, meta.year).filter { it.isNotBlank() }.joinToString(" • ")
-                            if (byline.isNotBlank()) {
-                                Text(
-                                    text = byline,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                )
+                        if (state.savedMediaEntries.size <= 1) {
+                            res.metadata?.let { meta ->
+                                if (meta.title.isNotBlank()) {
+                                    Text(
+                                        text = meta.title,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                val byline = listOf(meta.artist, meta.year).filter { it.isNotBlank() }.joinToString(" • ")
+                                if (byline.isNotBlank()) {
+                                    Text(
+                                        text = byline,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    )
+                                }
                             }
                         }
 
-                        state.savedAudioPath?.let { p ->
-                            Text(stringResource(R.string.download_saved_to, p), style = MaterialTheme.typography.labelMedium)
+                        state.savedMediaEntries.forEachIndexed { idx, entry ->
+                            if (idx > 0) HorizontalDivider()
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (state.savedMediaEntries.size > 1) {
+                                    Text(
+                                        text = entry.item.metadata?.title?.takeIf { it.isNotBlank() } ?: entry.item.displayName,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                entry.savedPath?.let { p ->
+                                    Text(stringResource(R.string.download_saved_to, p), style = MaterialTheme.typography.labelMedium)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            onOpenInEditor(
+                                                entry.item.file,
+                                                entry.item.displayName,
+                                                res.imageFile,
+                                                res.imageMimeType,
+                                                entry.item.metadata ?: res.metadata,
+                                            )
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            if (entry.item.isVideo) {
+                                                stringResource(R.string.download_extract_to_editor)
+                                            } else {
+                                                stringResource(R.string.download_open_in_editor)
+                                            },
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    OutlinedButton(
+                                        onClick = { onShareFile(entry.item.file, entry.item.mimeType) },
+                                    ) {
+                                        Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(stringResource(R.string.export_share))
+                                    }
+                                }
+                            }
                         }
+
                         state.savedImagePath?.let { p ->
                             Text(stringResource(R.string.download_saved_to, p), style = MaterialTheme.typography.labelMedium)
                         }
 
-                        if (res.audioFile != null) {
-                            Button(
-                                onClick = {
-                                    onOpenInEditor(
-                                        res.audioFile,
-                                        res.audioDisplayName ?: res.audioFile.name,
-                                        res.imageFile,
-                                        res.imageMimeType,
-                                        res.metadata,
-                                    )
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(stringResource(R.string.download_open_in_editor))
-                            }
+                        if (state.savedSubtitlePaths.isNotEmpty()) {
+                            Text(
+                                stringResource(R.string.download_saved_subtitles, state.savedSubtitlePaths.size),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            if (res.imageFile != null && hasActiveEditorSession) {
-                                FilledTonalButton(
-                                    onClick = { onUseAsCover(res.imageFile, res.imageMimeType ?: "image/jpeg") },
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Text(stringResource(R.string.download_set_as_cover))
+                        if (res.imageFile != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                if (hasActiveEditorSession) {
+                                    FilledTonalButton(
+                                        onClick = { onUseAsCover(res.imageFile, res.imageMimeType ?: "image/jpeg") },
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Text(stringResource(R.string.download_set_as_cover))
+                                    }
                                 }
-                            }
-                            val shareTarget = res.audioFile ?: res.imageFile
-                            val shareMime = if (res.audioFile != null) "audio/*" else (res.imageMimeType ?: "image/*")
-                            if (shareTarget != null) {
-                                OutlinedButton(
-                                    onClick = { onShareFile(shareTarget, shareMime) },
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.export_share))
+                                if (state.savedMediaEntries.isEmpty()) {
+                                    OutlinedButton(
+                                        onClick = { onShareFile(res.imageFile, res.imageMimeType ?: "image/*") },
+                                        modifier = Modifier.weight(1f),
+                                    ) {
+                                        Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(stringResource(R.string.export_share))
+                                    }
                                 }
                             }
                         }
@@ -700,6 +1044,183 @@ fun DownloadScreen(
                 showCookieSheet = false
             },
         )
+    }
+
+    val sheetPreview = state.preview
+    if (showFormatSheet && sheetPreview != null) {
+        FormatPickerSheet(
+            formats = sheetPreview.formats,
+            selectedFormatId = state.selectedFormatId,
+            onSelectFormat = { id ->
+                viewModel.selectFormatId(id)
+                showFormatSheet = false
+            },
+            onDismiss = { showFormatSheet = false },
+        )
+    }
+
+    if (showSaveTemplateDialog) {
+        var templateName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showSaveTemplateDialog = false },
+            title = { Text(stringResource(R.string.download_save_template)) },
+            text = {
+                OutlinedTextField(
+                    value = templateName,
+                    onValueChange = { templateName = it },
+                    label = { Text(stringResource(R.string.download_template_name_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.saveCommandTemplate(templateName)
+                        showSaveTemplateDialog = false
+                    },
+                    enabled = templateName.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.apply))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveTemplateDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FormatPickerSheet(
+    formats: List<MediaFormatOption>,
+    selectedFormatId: String?,
+    onSelectFormat: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var activeTab by remember { mutableIntStateOf(0) }
+    val audioFormats = remember(formats) { formats.filter { it.isAudioOnly } }
+    val muxedFormats = remember(formats) { formats.filter { it.isMuxedVideo } }
+    val videoOnlyFormats = remember(formats) { formats.filter { it.isVideoOnly } }
+
+    val displayed = when (activeTab) {
+        0 -> audioFormats
+        1 -> muxedFormats
+        else -> videoOnlyFormats
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(stringResource(R.string.formats_picker_title), style = MaterialTheme.typography.headlineSmall)
+
+            OutlinedCard(
+                onClick = { onSelectFormat(null) },
+                colors = if (selectedFormatId == null) {
+                    CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f))
+                } else {
+                    CardDefaults.outlinedCardColors()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RadioButton(selected = selectedFormatId == null, onClick = { onSelectFormat(null) })
+                    Text(stringResource(R.string.formats_picker_auto), style = MaterialTheme.typography.titleSmall)
+                }
+            }
+
+            val tabs = listOf(
+                "${stringResource(R.string.formats_tab_audio)} (${audioFormats.size})",
+                "${stringResource(R.string.formats_tab_video)} (${muxedFormats.size})",
+                "${stringResource(R.string.formats_tab_other)} (${videoOnlyFormats.size})",
+            )
+            PrimaryTabRow(selectedTabIndex = activeTab) {
+                tabs.forEachIndexed { idx, label ->
+                    Tab(
+                        selected = activeTab == idx,
+                        onClick = { activeTab = idx },
+                        text = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (displayed.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.formats_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                } else {
+                    displayed.forEach { fmt ->
+                        val selected = selectedFormatId == fmt.formatId
+                        OutlinedCard(
+                            onClick = { onSelectFormat(fmt.formatId) },
+                            colors = if (selected) {
+                                CardDefaults.outlinedCardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                                )
+                            } else {
+                                CardDefaults.outlinedCardColors()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                RadioButton(selected = selected, onClick = { onSelectFormat(fmt.formatId) })
+                                Column(modifier = Modifier.weight(1f)) {
+                                    val headline = listOfNotNull(
+                                        "#${fmt.formatId}",
+                                        fmt.ext.uppercase(),
+                                        fmt.resolution.takeIf { it.isNotBlank() && it != "audio only" },
+                                        fmt.formatNote.takeIf { it.isNotBlank() },
+                                    ).joinToString(" • ")
+                                    Text(headline, style = MaterialTheme.typography.titleSmall)
+
+                                    val details = buildList {
+                                        val kbps = maxOf(fmt.abrKbps, fmt.tbrKbps)
+                                        if (kbps > 0) add("$kbps kbps")
+                                        if (fmt.asrHz > 0) add("${fmt.asrHz / 1000} kHz")
+                                        if (fmt.acodec.isNotBlank() && fmt.acodec != "none") add(fmt.acodec)
+                                        if (fmt.vcodec.isNotBlank() && fmt.vcodec != "none") add(fmt.vcodec)
+                                        if (fmt.fileSizeBytes > 0L) add(Formatters.formatBytes(fmt.fileSizeBytes))
+                                    }
+                                    if (details.isNotEmpty()) {
+                                        Text(
+                                            text = details.joinToString(" • "),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

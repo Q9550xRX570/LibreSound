@@ -82,16 +82,24 @@ object PlatformDownloader {
             val appCtx = context.applicationContext
             ensureInitialized(appCtx)
 
-            val req = YoutubeDLRequest(url.trim()).apply {
-                addOption("--dump-json")
-                addOption("--no-playlist")
+            val firstUrl = PresetCommandBuilder.parseUrls(url).firstOrNull() ?: url.trim()
+            val req = YoutubeDLRequest(firstUrl).apply {
+                addOption("-J")
+                if (options.allowPlaylist) {
+                    addOption("--flat-playlist")
+                } else {
+                    addOption("--no-playlist")
+                }
                 addOption("--retries", options.retries.coerceIn(1, 10).toString())
                 addOption("--socket-timeout", options.socketTimeoutSec.coerceIn(5, 120).toString())
                 if (options.forceIpv4) addOption("--force-ipv4")
                 if (options.geoBypass) addOption("--geo-bypass")
+                if (options.noCheckCertificates) addOption("--no-check-certificates")
                 options.cookieFilePath?.takeIf { it.isNotBlank() }?.let { addOption("--cookies", it) }
                 options.userAgent.trim().takeIf { it.isNotBlank() }?.let { addOption("--user-agent", it) }
+                options.referer.trim().takeIf { it.isNotBlank() }?.let { addOption("--referer", it) }
                 options.proxyUrl.trim().takeIf { it.isNotBlank() }?.let { addOption("--proxy", it) }
+                PresetCommandBuilder.buildExtractorArgsString(options)?.let { addOption("--extractor-args", it) }
             }
 
             val procId = UUID.randomUUID().toString()
@@ -106,61 +114,16 @@ object PlatformDownloader {
                 if (activeProcessId == procId) activeProcessId = null
             }
 
-            val firstJsonLine = response.out.lineSequence()
+            val jsonLine = response.out.lineSequence()
                 .map { it.trim() }
-                .firstOrNull { it.startsWith("{") }
+                .lastOrNull { it.startsWith("{") }
                 ?: throw YoutubeDLException("Unable to parse media info")
 
-            val root = runCatching { SimpleJsonParser.parse(firstJsonLine) as? Map<*, *> }.getOrNull()
-                ?: throw YoutubeDLException("Unable to parse media info")
-
-            val formats = (root["formats"] as? List<*>)
-                .orEmpty()
-                .mapNotNull { it as? Map<*, *> }
-
-            val audioFormats = formats.filter { f ->
-                val acodec = f["acodec"]?.toString().orEmpty()
-                val vcodec = f["vcodec"]?.toString().orEmpty()
-                acodec.isNotBlank() && acodec != "none" && acodec != "null" &&
-                    (vcodec.isBlank() || vcodec == "none" || vcodec == "null")
-            }
-            val preferredExt = when (options.audioPreference) {
-                AudioFormatPreference.OPUS_WEBM -> "webm"
-                AudioFormatPreference.M4A_AAC -> "m4a"
-                AudioFormatPreference.AUTO_BEST -> null
-            }
-            val bestFormat = audioFormats
-                .filter { preferredExt == null || it["ext"]?.toString().equals(preferredExt, ignoreCase = true) }
-                .maxByOrNull { (it["abr"] as? Number)?.toDouble() ?: 0.0 }
-                ?: audioFormats.maxByOrNull { (it["abr"] as? Number)?.toDouble() ?: 0.0 }
-
-            val approxSize = ((bestFormat?.get("filesize") as? Number)?.toLong()?.takeIf { it > 0L }
-                ?: (bestFormat?.get("filesize_approx") as? Number)?.toLong()?.takeIf { it > 0L }
-                ?: (root["filesize"] as? Number)?.toLong()?.takeIf { it > 0L }
-                ?: (root["filesize_approx"] as? Number)?.toLong()
-                ?: 0L).coerceAtLeast(0L)
-
-            val title = root["title"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
-                ?: root["fulltitle"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
-                ?: "Media"
-
-            val uploader = listOf("uploader", "channel", "creator")
-                .firstNotNullOfOrNull { key ->
-                    root[key]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
-                }.orEmpty()
-
-            MediaTrackPreview(
-                title = title,
-                uploader = uploader,
-                durationSec = ((root["duration"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
-                thumbnailUrl = root["thumbnail"]?.toString()?.takeIf { it.isNotBlank() && it != "null" },
-                webpageUrl = root["webpage_url"]?.toString()?.takeIf { it.isNotBlank() && it != "null" } ?: url.trim(),
-                extractor = root["extractor_key"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
-                    ?: root["extractor"]?.toString()?.takeIf { it.isNotBlank() && it != "null" },
-                audioExt = bestFormat?.get("ext")?.toString()?.takeIf { it.isNotBlank() && it != "null" }
-                    ?: root["ext"]?.toString()?.takeIf { it.isNotBlank() && it != "null" },
-                approxFileSizeBytes = approxSize,
-            )
+            DumpJsonPreviewParser.parse(
+                jsonText = jsonLine,
+                sourceUrl = firstUrl,
+                audioPreference = options.audioPreference,
+            ) ?: throw YoutubeDLException("Unable to parse media info")
         }
 
         override suspend fun execute(
@@ -176,8 +139,9 @@ object PlatformDownloader {
             onProgress(0f, -1L, "yt-dlp...")
             ensureInitialized(context)
 
-            val template = File(workDir, "%(title).80B.%(ext)s").absolutePath
-            val req = YoutubeDLRequest(url.trim())
+            val urls = PresetCommandBuilder.parseUrls(url)
+            val template = PresetCommandBuilder.resolveOutputTemplate(workDir, options)
+            val req = if (urls.size > 1) YoutubeDLRequest(urls) else YoutubeDLRequest(urls.firstOrNull() ?: url.trim())
             val plan = PresetCommandBuilder.buildExecutionPlan(preset, customArgs, template, options)
             for ((flag, value) in plan.options) {
                 if (value != null) {
@@ -205,48 +169,92 @@ object PlatformDownloader {
             }
 
             val files = workDir.listFiles()?.filter { it.isFile && it.length() > 0L } ?: emptyList()
-            val audioExts = setOf("opus", "ogg", "webm", "m4a", "aac", "mp3", "flac", "wav", "mp4", "mkv")
+            val audioOnlyExts = setOf("opus", "ogg", "m4a", "aac", "mp3", "flac", "wav", "mka")
+            val videoOrContainerExts = setOf("mp4", "mkv", "mov", "3gp")
+            val mediaExts = audioOnlyExts + videoOrContainerExts + "webm"
             val imageExts = setOf("jpg", "jpeg", "png", "webp")
+            val subtitleExts = setOf("vtt", "srt", "lrc", "ass")
 
-            val infoJsonFile = files.firstOrNull { it.name.endsWith(".info.json", ignoreCase = true) }
-            val parsedMeta: AudioMetadata? = infoJsonFile?.let { jf ->
+            val infoJsonMap = files
+                .filter { it.name.endsWith(".info.json", ignoreCase = true) }
+                .associateBy { it.name.removeSuffix(".info.json") }
+
+            val fallbackMeta: AudioMetadata? = infoJsonMap.values.firstOrNull()?.let { jf ->
                 runCatching { InfoJsonMetadataParser.parse(jf.readText(Charsets.UTF_8)) }.getOrNull()
             }
 
-            val audioFile = files
-                .filter { it.extension.lowercase() in audioExts }
-                .maxByOrNull { it.length() }
+            val mediaFiles = files
+                .filter { it.extension.lowercase() in mediaExts }
+                .sortedByDescending { it.length() }
 
-            val rawImageFile = files
+            val mediaItems = mediaFiles.map { mediaFile ->
+                val ext = mediaFile.extension.lowercase()
+                val isVideo = ext in videoOrContainerExts ||
+                    (ext == "webm" && preset == DownloadPreset.VIDEO_MUXED)
+                val mime = mimeForExtension(ext, isVideo)
+                val base = mediaFile.nameWithoutExtension
+                val matchedJson = infoJsonMap[base]
+                val itemMeta = matchedJson?.let { jf ->
+                    runCatching { InfoJsonMetadataParser.parse(jf.readText(Charsets.UTF_8)) }.getOrNull()
+                } ?: fallbackMeta
+                DownloadedMediaItem(
+                    file = mediaFile,
+                    displayName = mediaFile.name,
+                    isVideo = isVideo,
+                    mimeType = mime,
+                    metadata = itemMeta,
+                )
+            }
+
+            val rawImages = files
                 .filter { it.extension.lowercase() in imageExts }
-                .maxByOrNull { it.length() }
-
-            val imageFile = rawImageFile?.let { normalizeImageForAndroidAndTags(it) }
-
-            val imageMime = when (imageFile?.extension?.lowercase()) {
+                .sortedByDescending { it.length() }
+            val normalizedImages = rawImages.map { normalizeImageForAndroidAndTags(it) }.distinctBy { it.absolutePath }
+            val primaryImage = normalizedImages.firstOrNull()
+            val imageMime = when (primaryImage?.extension?.lowercase()) {
                 "png" -> "image/png"
                 "webp" -> "image/webp"
                 "jpg", "jpeg" -> "image/jpeg"
                 else -> null
             }
 
+            val subtitleFiles = files.filter { it.extension.lowercase() in subtitleExts }
+            val primaryMedia = mediaItems.firstOrNull()
+
             DownloadedArtifact(
-                audioFile = audioFile,
-                audioDisplayName = audioFile?.name,
-                imageFile = imageFile,
-                imageDisplayName = imageFile?.name,
+                audioFile = primaryMedia?.file,
+                audioDisplayName = primaryMedia?.displayName,
+                imageFile = primaryImage,
+                imageDisplayName = primaryImage?.name,
                 imageMimeType = imageMime,
-                metadata = parsedMeta,
-                sourceUrl = url.trim(),
+                metadata = primaryMedia?.metadata ?: fallbackMeta,
+                sourceUrl = urls.firstOrNull() ?: url.trim(),
+                mediaItems = mediaItems,
+                imageFiles = normalizedImages,
+                subtitleFiles = subtitleFiles,
             )
+        }
+
+        private fun mimeForExtension(ext: String, isVideo: Boolean): String = when (ext) {
+            "opus" -> "audio/opus"
+            "ogg" -> "audio/ogg"
+            "webm" -> if (isVideo) "video/webm" else "audio/webm"
+            "m4a", "aac" -> "audio/mp4"
+            "mp3" -> "audio/mpeg"
+            "flac" -> "audio/flac"
+            "wav" -> "audio/wav"
+            "mka" -> "audio/x-matroska"
+            "mp4" -> "video/mp4"
+            "mkv" -> "video/x-matroska"
+            "mov" -> "video/quicktime"
+            else -> if (isVideo) "video/*" else "audio/*"
         }
 
         private fun normalizeImageForAndroidAndTags(file: File): File {
             if (!file.extension.equals("webp", ignoreCase = true)) return file
             return runCatching {
                 val bmp = BitmapFactory.decodeFile(file.absolutePath) ?: return file
-                val baseName = file.nameWithoutExtension
-                val jpgFile = File(file.parentFile, "$baseName.jpg")
+                val jpgFile = File(file.parentFile, "${file.nameWithoutExtension}.jpg")
                 FileOutputStream(jpgFile).use { out ->
                     bmp.compress(Bitmap.CompressFormat.JPEG, 92, out)
                 }

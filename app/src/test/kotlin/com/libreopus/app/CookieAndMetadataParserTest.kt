@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.libreopus.app
 
+import com.libreopus.app.downloader.AudioFormatPreference
 import com.libreopus.app.downloader.CookieParser
+import com.libreopus.app.downloader.DumpJsonPreviewParser
 import com.libreopus.app.downloader.InfoJsonMetadataParser
 import com.libreopus.app.downloader.YtDlpErrorClassifier
 import com.libreopus.app.downloader.YtDlpErrorKind
@@ -136,5 +138,53 @@ class CookieAndMetadataParserTest {
             YtDlpErrorKind.UNSUPPORTED_URL,
             YtDlpErrorClassifier.classify("ERROR: Unsupported URL: https://example.com/foo").kind,
         )
+    }
+
+    @Test
+    fun `dumpJsonPreviewParser extracts formats without storyboards and parses playlists`() {
+        val singleJson = """
+            {
+              "title": "Sample Track",
+              "uploader": "Studio Channel",
+              "duration": 215.4,
+              "extractor_key": "Youtube",
+              "formats": [
+                {"format_id":"sb0","ext":"mhtml","format_note":"storyboard","vcodec":"none","acodec":"none"},
+                {"format_id":"140","ext":"m4a","acodec":"mp4a.40.2","vcodec":"none","abr":129,"asr":44100,"filesize":3500000,"format_note":"medium"},
+                {"format_id":"251","ext":"webm","acodec":"opus","vcodec":"none","abr":160,"asr":48000,"filesize_approx":4100000,"format_note":"medium"},
+                {"format_id":"18","ext":"mp4","acodec":"mp4a.40.2","vcodec":"avc1","height":360,"tbr":480,"filesize":12000000}
+              ]
+            }
+        """.trimIndent()
+
+        val track = DumpJsonPreviewParser.parse(singleJson, "https://youtube.com/watch?v=1", AudioFormatPreference.OPUS_WEBM)
+        assertNotNull(track)
+        assertFalse(track!!.isPlaylist)
+        assertEquals("Sample Track", track.title)
+        assertEquals("webm", track.audioExt)
+        assertEquals(3, track.formats.size)
+        assertEquals("251", track.formats.first().formatId)
+        assertTrue(track.formats.first().isAudioOnly)
+        assertTrue(track.formats.last().isMuxedVideo)
+
+        val playlistJson = """
+            {
+              "_type": "playlist",
+              "title": "Chill Mix",
+              "uploader": "Curator",
+              "playlist_count": 2,
+              "entries": [
+                {"playlist_index": 1, "title": "First", "duration": 120, "url": "https://youtube.com/watch?v=a"},
+                {"playlist_index": 2, "title": "Second", "duration": 180, "url": "https://youtube.com/watch?v=b"}
+              ]
+            }
+        """.trimIndent()
+
+        val pl = DumpJsonPreviewParser.parse(playlistJson, "https://youtube.com/playlist?list=1")
+        assertNotNull(pl)
+        assertTrue(pl!!.isPlaylist)
+        assertEquals(2, pl.playlistCount)
+        assertEquals(300, pl.durationSec)
+        assertEquals("First", pl.playlistEntries[0].title)
     }
 }

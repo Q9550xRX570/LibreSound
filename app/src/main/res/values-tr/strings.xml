@@ -141,34 +141,53 @@
 
     <!-- Downloader (full flavor) -->
     <string name="download_title">Medya İndirici</string>
-    <string name="download_subtitle">Hazır yt-dlp betikleriyle en iyi kalite ses veya kapak görseli indirin.</string>
-    <string name="download_url_hint">Bağlantı yapıştır (YouTube, SoundCloud, Bandcamp…)</string>
+    <string name="download_subtitle">yt-dlp\'nin tüm esnekliğiyle en iyi ses, video veya kapak görseli indirin.</string>
+    <string name="download_url_hint">1 veya daha fazla bağlantı yapıştır (satır başına 1)</string>
     <string name="download_paste">Yapıştır</string>
     <string name="download_clear">Temizle</string>
-    <string name="download_fetch_info">Bilgi Al</string>
+    <string name="download_fetch_info">Bilgi &amp; Formatlar</string>
     <string name="download_fetching_info">Medya bilgisi alınıyor…</string>
     <string name="download_audio_format_label">Ses Format Tercihi</string>
     <string name="download_format_auto">Otomatik En İyi</string>
     <string name="download_format_opus">WebM (Opus)</string>
     <string name="download_format_m4a">M4A (AAC)</string>
-    <string name="download_presets_label">Hazır Betikler</string>
+    <string name="download_presets_label">İndirme Modları</string>
     <string name="download_preset_best_audio">En İyi Kalite Ses İndir</string>
     <string name="download_preset_best_audio_desc">En yüksek kaliteli yerel ses akışını indirir</string>
     <string name="download_preset_image_only">Sadece Resim İndir</string>
     <string name="download_preset_image_only_desc">Yalnızca kapak / küçük resmi indirir</string>
     <string name="download_preset_audio_image">En İyi Ses + Kapak Resmi</string>
     <string name="download_preset_audio_image_desc">Ses ve kapak görselini indirip stüdyoya hazırlar</string>
-    <string name="download_preset_custom">Özel yt-dlp Betiği</string>
-    <string name="download_preset_custom_desc">Ham yt-dlp parametrelerini kendiniz düzenleyin</string>
+    <string name="download_preset_video_muxed">Video + Ses (MP4 / WebM)</string>
+    <string name="download_preset_video_muxed_desc">Ek FFmpeg şişirmesi olmadan doğrudan oynatılabilir video indirir</string>
+    <string name="download_preset_custom">Özel yt-dlp Komutu</string>
+    <string name="download_preset_custom_desc">Tam CLI kontrolü, hazır şablonlar ve özel bayraklar</string>
     <string name="download_custom_args_label">yt-dlp parametreleri</string>
-    <string name="download_command_preview">Betik bayrakları: %1$s</string>
+    <string name="download_command_preview">Etkin bayraklar: %1$s</string>
+    <string name="download_customize_command">Komutu Özelleştir</string>
+    <string name="download_templates_label">Komut Şablonları</string>
+    <string name="download_save_template">Şablon Kaydet</string>
+    <string name="download_template_name_hint">Şablon adı (örn. Podcast Opus)</string>
     <string name="download_start">İndir</string>
     <string name="download_initializing">yt-dlp ortamı hazırlanıyor…</string>
     <string name="download_eta">Kalan: %1$dsn</string>
     <string name="download_open_in_editor">Düzenleyicide Aç</string>
+    <string name="download_extract_to_editor">Sesini Düzenleyicide Aç</string>
     <string name="download_set_as_cover">Parça Kapağı Yap</string>
     <string name="download_saved_to">Kaydedildi: %1$s</string>
+    <string name="download_saved_subtitles">Altyazılar kaydedildi (%1$d)</string>
     <string name="download_logs">Konsol Çıktısı</string>
+
+    <!-- Format & Playlist Picker -->
+    <string name="formats_pick_button">Format Seç (%1$d)</string>
+    <string name="formats_selected_badge">Seçili format: #%1$s (değiştirmek için dokun)</string>
+    <string name="formats_picker_title">Kullanılabilir Akışlar</string>
+    <string name="formats_picker_auto">Otomatik En İyi Kalite</string>
+    <string name="formats_tab_audio">Ses</string>
+    <string name="formats_tab_video">Video + Ses</string>
+    <string name="formats_tab_other">Sadece Video</string>
+    <string name="formats_empty">Bu kategoride akış bulunamadı.</string>
+    <string name="playlist_count_badge">Oynatma Listesi • %1$d öğe</string>
 
     <!-- Cookies & Network Hardening -->
     <string name="cookies_title">Çerezler (cookies.txt)</string>
@@ -183,18 +202,35 @@
     <string name="cookies_save_validate">Doğrula ve Kaydet</string>
     <string name="cookies_clear">Çerezleri Temizle</string>
     <string name="cookies_json_converted">JSON çerezleri Netscape biçimine dönüştürüldü (%1$d çerez).</string>
-    <string name="download_advanced_options">Ağ, Proxy ve Gelişmiş Seçenekler</string>
-    <string name="download_force_ipv4">IPv4 Zorla (--force-ipv4)</string>
-    <string name="download_geo_bypass">Bölge Kilidi Atla (--geo-bypass)</string>
+    <string name="download_advanced_options">Güç, Ağ ve Çıktı Seçenekleri</string>
+    <string name="download_allow_playlist">Oynatma Listesi İndirmeye İzin Ver</string>
+    <string name="download_playlist_items_label">Liste Öğeleri (örn. 1-5 veya 1,3,7)</string>
+    <string name="download_youtube_client_label">YouTube Oynatıcı İstemcisi</string>
+    <string name="download_client_auto">Otomatik</string>
+    <string name="download_filename_template_label">Dosya Adı Şablonu</string>
+    <string name="download_tmpl_title">Başlık</string>
+    <string name="download_tmpl_uploader">Kanal - Başlık</string>
+    <string name="download_tmpl_playlist">Sıra - Başlık</string>
+    <string name="download_tmpl_id">ID</string>
+    <string name="download_tmpl_custom">Özel</string>
+    <string name="download_custom_template_label" formatted="false">Özel -o şablonu (örn. %(title).80B.%(ext)s)</string>
+    <string name="download_concurrent_fragments">Paralel Parça: %1$d</string>
+    <string name="download_write_subs">Altyazıları İndir (tr, en)</string>
+    <string name="download_no_check_certs">SSL Sertifika Hatalarını Yoksay</string>
+    <string name="download_force_ipv4">IPv4 Zorla</string>
+    <string name="download_geo_bypass">Bölge Kilidi Atla</string>
+    <string name="download_rate_limit_label">Hız Sınırı (isteğe bağlı, örn. 2M veya 500K)</string>
     <string name="download_proxy_label">Proxy URL (isteğe bağlı, örn. socks5://127.0.0.1:9050)</string>
     <string name="download_user_agent_label">Özel User-Agent (isteğe bağlı)</string>
+    <string name="download_referer_label">Referer URL (isteğe bağlı)</string>
+    <string name="download_extractor_args_label">Ek Extractor Argümanları (isteğe bağlı)</string>
 
     <!-- Error Diagnostics -->
-    <string name="ytdlp_err_bot_check">YouTube bot/oturum doğrulaması istedi. Oturum açık bir tarayıcıdan cookies.txt ekleyip yeniden deneyin.</string>
+    <string name="ytdlp_err_bot_check">YouTube bot/oturum doğrulaması istedi. Oturum açık bir tarayıcıdan cookies.txt ekleyip veya YouTube İstemcisini değiştirip yeniden deneyin.</string>
     <string name="ytdlp_err_age">Bu medya yaş kısıtlamalı. İndirmek için geçerli tarayıcı çerezlerini etkinleştirin.</string>
     <string name="ytdlp_err_auth">Bu içerik oturum veya üyelik gerektiriyor. Geçerli çerez dosyası eklemeyi deneyin.</string>
-    <string name="ytdlp_err_403">Sunucu HTTP 403 Yasaklandı hatası döndürdü. yt-dlp\'yi güncellemeyi, IPv4 Zorla\'yı açmayı veya çerez eklemeyi deneyin.</string>
-    <string name="ytdlp_err_ffmpeg">Bu özel komut FFmpeg gerektiriyor; uygulama boyutunu düşük tutmak için FFmpeg dahil edilmedi. -x olmadan doğrudan ses akışı seçin.</string>
+    <string name="ytdlp_err_403">Sunucu HTTP 403 Yasaklandı hatası döndürdü. YouTube İstemcisini değiştirmeyi, yt-dlp\'yi güncellemeyi, IPv4 Zorla\'yı açmayı veya çerez eklemeyi deneyin.</string>
+    <string name="ytdlp_err_ffmpeg">Bu özel komut FFmpeg gerektiriyor; uygulama boyutunu düşük tutmak için FFmpeg dahil edilmedi. -x olmadan doğrudan bir akış seçin.</string>
     <string name="ytdlp_err_network">Bağlantı veya zaman aşımı hatası oluştu. İnternetinizi kontrol edin ya da IPv4 Zorla seçeneğini deneyin.</string>
     <string name="ytdlp_err_unsupported">Bu bağlantı mevcut yt-dlp çıkarıcıları tarafından desteklenmiyor. yt-dlp güncellemesi sorunu çözebilir.</string>
     <string name="ytdlp_err_unavailable">Bu medya kullanılamıyor, silinmiş veya bölgenizde engellenmiş.</string>

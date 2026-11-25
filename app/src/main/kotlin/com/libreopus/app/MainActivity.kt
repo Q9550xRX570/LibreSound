@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libreopus.app.data.AppLanguage
@@ -279,14 +280,14 @@ private fun LibreOpusAppContent(
                         selected = currentTab == TopTab.STUDIO,
                         onClick = { currentTab = TopTab.STUDIO },
                         icon = { Icon(Icons.Rounded.Home, contentDescription = null) },
-                        label = { Text(stringResource(R.string.nav_studio)) },
+                        label = { NavLabel(stringResource(R.string.nav_studio)) },
                     )
                     if (editorState.hasSession) {
                         NavigationBarItem(
                             selected = currentTab == TopTab.EDITOR,
                             onClick = { currentTab = TopTab.EDITOR },
                             icon = { Icon(Icons.Rounded.GraphicEq, contentDescription = null) },
-                            label = { Text(stringResource(R.string.nav_editor)) },
+                            label = { NavLabel(stringResource(R.string.nav_editor)) },
                         )
                     }
                     if (BuildConfig.HAS_YTDLP) {
@@ -294,20 +295,20 @@ private fun LibreOpusAppContent(
                             selected = currentTab == TopTab.DOWNLOAD,
                             onClick = { currentTab = TopTab.DOWNLOAD },
                             icon = { Icon(Icons.Rounded.Download, contentDescription = null) },
-                            label = { Text(stringResource(R.string.nav_download)) },
+                            label = { NavLabel(stringResource(R.string.nav_download)) },
                         )
                     }
                     NavigationBarItem(
                         selected = currentTab == TopTab.CONVERTER,
                         onClick = { currentTab = TopTab.CONVERTER },
                         icon = { Icon(Icons.Rounded.SwapHoriz, contentDescription = null) },
-                        label = { Text(stringResource(R.string.nav_converter)) },
+                        label = { NavLabel(stringResource(R.string.nav_converter)) },
                     )
                     NavigationBarItem(
                         selected = currentTab == TopTab.SETTINGS,
                         onClick = { currentTab = TopTab.SETTINGS },
                         icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
-                        label = { Text(stringResource(R.string.nav_settings)) },
+                        label = { NavLabel(stringResource(R.string.nav_settings)) },
                     )
                 }
             },
@@ -377,3 +378,14 @@ private fun LibreOpusAppContent(
         }
     }
 }
+
+@Composable
+private fun NavLabel(text: String) {
+    Text(
+        text = text,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
