@@ -9,6 +9,8 @@ import com.libreopus.app.downloader.DownloadPreset
 import com.libreopus.app.downloader.FilenameTemplate
 import com.libreopus.app.downloader.PresetCommandBuilder
 import com.libreopus.app.downloader.YoutubeClientMode
+import com.libreopus.app.downloader.YtDlpErrorClassifier
+import com.libreopus.app.downloader.YtDlpErrorKind
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,9 +22,10 @@ class DownloaderPresetTest {
     @Test
     fun `preset builder emits expected flags for all presets including video`() {
         val audioArgs = PresetCommandBuilder.buildArguments(DownloadPreset.BEST_AUDIO, "", "/tmp/%(title)s.%(ext)s")
-        assertTrue(audioArgs.any { it.first == "-f" && it.second!!.contains("bestaudio") })
+        assertTrue(audioArgs.any { it.first == "-f" && it.second!!.contains("bestaudio") && it.second!!.contains("/best") })
         assertTrue(audioArgs.any { it.first == "--no-playlist" })
         assertTrue(audioArgs.any { it.first == "--write-info-json" })
+        assertTrue(audioArgs.any { it.first == "--remote-components" && it.second == "ejs:github" })
         assertTrue(audioArgs.any { it.first == "--newline" })
 
         val imgArgs = PresetCommandBuilder.buildArguments(DownloadPreset.IMAGE_ONLY, "", "/tmp/%(title)s.%(ext)s")
@@ -48,7 +51,7 @@ class DownloaderPresetTest {
     }
 
     @Test
-    fun `execution plan applies YTDLnis format override, player client, playlist, fragments, and network flags`() {
+    fun `execution plan applies YTDLnis format override, cache dir, player client, playlist, fragments, and network flags`() {
         val opts = DownloadExecutionOptions(
             audioPreference = AudioFormatPreference.M4A_AAC,
             selectedFormatId = "251",
@@ -57,7 +60,7 @@ class DownloaderPresetTest {
             geoBypass = true,
             allowPlaylist = true,
             playlistItems = "1-5",
-            youtubeClient = YoutubeClientMode.ANDROID,
+            youtubeClient = YoutubeClientMode.ANDROID_VR,
             extraExtractorArgs = "player_skip=webpage",
             concurrentFragments = 8,
             rateLimit = "2M",
@@ -66,6 +69,7 @@ class DownloaderPresetTest {
             referer = "https://example.org",
             proxyUrl = "socks5://127.0.0.1:9050",
             userAgent = "Mozilla/5.0",
+            cacheDirPath = "/data/user/0/com.libreopus.app/cache/ytdlp_cache",
         )
         val plan = PresetCommandBuilder.buildExecutionPlan(
             preset = DownloadPreset.BEST_AUDIO,
@@ -75,9 +79,11 @@ class DownloaderPresetTest {
         )
         assertEquals("251", plan.options.first { it.first == "-f" }.second)
         assertEquals("/data/user/0/com.libreopus.app/files/ytdlp/cookies.txt", plan.options.first { it.first == "--cookies" }.second)
+        assertEquals("/data/user/0/com.libreopus.app/cache/ytdlp_cache", plan.options.first { it.first == "--cache-dir" }.second)
+        assertEquals("ejs:github", plan.options.first { it.first == "--remote-components" }.second)
         assertTrue(plan.options.any { it.first == "--yes-playlist" })
         assertEquals("1-5", plan.options.first { it.first == "--playlist-items" }.second)
-        assertEquals("youtube:player_client=android;player_skip=webpage", plan.options.first { it.first == "--extractor-args" }.second)
+        assertEquals("youtube:player_client=android_vr;player_skip=webpage", plan.options.first { it.first == "--extractor-args" }.second)
         assertEquals("8", plan.options.first { it.first == "-N" }.second)
         assertEquals("2M", plan.options.first { it.first == "--limit-rate" }.second)
         assertTrue(plan.options.any { it.first == "--no-check-certificates" })
@@ -110,11 +116,16 @@ class DownloaderPresetTest {
         val exported = PresetCommandBuilder.exportAsCustomCommand(
             preset = DownloadPreset.VIDEO_MUXED,
             customArgs = "",
-            execOptions = DownloadExecutionOptions(youtubeClient = YoutubeClientMode.IOS, concurrentFragments = 4),
+            execOptions = DownloadExecutionOptions(
+                youtubeClient = YoutubeClientMode.TV_DOWNGRADED,
+                concurrentFragments = 4,
+                cacheDirPath = "/tmp/cache",
+            ),
         )
         assertTrue(exported.contains("-f "))
-        assertTrue(exported.contains("youtube:player_client=ios"))
+        assertTrue(exported.contains("youtube:player_client=tv_downgraded"))
         assertTrue(exported.contains("-N 4"))
+        assertFalse(exported.contains("--cache-dir"))
 
         val entries = listOf(
             CommandTemplateEntry(id = "t1", name = "My \"Opus\"", args = "-f bestaudio --no-playlist"),
@@ -147,5 +158,17 @@ class DownloaderPresetTest {
     fun `tokenizeArgs respects quoted arguments`() {
         val tokens = PresetCommandBuilder.tokenizeArgs("--format 'bestaudio' -o \"my file.opus\" --no-mtime")
         assertEquals(listOf("--format", "bestaudio", "-o", "my file.opus", "--no-mtime"), tokens)
+    }
+
+    @Test
+    fun `error classifier maps format and challenge extraction errors accurately`() {
+        val diagFormat = YtDlpErrorClassifier.classify("ERROR: [youtube] xyz: Requested format is not available.")
+        assertEquals(YtDlpErrorKind.EXTRACTOR_OR_FORMAT_FAILED, diagFormat.kind)
+
+        val diagSig = YtDlpErrorClassifier.classify("ERROR: Signature extraction failed: Traceback")
+        assertEquals(YtDlpErrorKind.EXTRACTOR_OR_FORMAT_FAILED, diagSig.kind)
+
+        val diagBot = YtDlpErrorClassifier.classify("ERROR: Sign in to confirm you're not a bot")
+        assertEquals(YtDlpErrorKind.BOT_CHECK_NEEDS_COOKIES, diagBot.kind)
     }
 }

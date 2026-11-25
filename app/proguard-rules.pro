@@ -1,7 +1,16 @@
 # LibreOpus R8 / ProGuard rules
 -dontwarn java.lang.invoke.**
 -dontwarn com.yausername.youtubedl_android.**
+-dontwarn com.yausername.youtubedl_common.**
+-dontwarn com.fasterxml.jackson.**
+-dontwarn org.apache.commons.**
 -keep class com.libreopus.audio.api.** { *; }
 -keep class com.libreopus.dsp.** { *; }
 -keep class com.libreopus.engine.lite.** { *; }
 -keep class com.yausername.youtubedl_android.** { *; }
+-keep class com.yausername.youtubedl_common.** { *; }
+-keep class org.apache.commons.compress.** { *; }
+-keep class org.apache.commons.io.** { *; }
+-keep class com.fasterxml.jackson.** { *; }
+-keepnames class com.libreopus.app.downloader.**
+-keep class com.libreopus.app.downloader.YtDlp* { *; }

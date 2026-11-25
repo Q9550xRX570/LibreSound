@@ -4,22 +4,28 @@ package com.libreopus.app.ui.screens
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.CallSplit
 import androidx.compose.material.icons.automirrored.rounded.Redo
+import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.CallSplit
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.ContentPaste
@@ -34,20 +40,15 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.SelectAll
-import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SpaceBar
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Tag
-import androidx.compose.material.icons.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Verified
-import androidx.compose.material.icons.rounded.VolumeOff
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material.icons.rounded.ZoomOut
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -77,7 +78,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.libreopus.app.R
@@ -123,6 +128,7 @@ fun EditorScreen(
     onConfirmMixOverlay: (offsetMs: Long, baseGainDb: Float, overlayGainDb: Float) -> Unit = { _, _, _ -> },
     onDismissMixOverlay: () -> Unit = {},
 ) {
+    val haptic = LocalHapticFeedback.current
     var zoom by remember { mutableFloatStateOf(1f) }
     var scrollFrac by remember { mutableFloatStateOf(0f) }
     var activeTab by remember { mutableIntStateOf(0) }
@@ -240,37 +246,72 @@ fun EditorScreen(
                     }
                 }
 
-                // Mobile Fine Marker Nudge (±100 ms) & Undo/Redo Action Hint
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    FilterChip(
-                        selected = nudgeTarget == TrimMarkerTarget.START,
-                        onClick = { nudgeTarget = TrimMarkerTarget.START },
-                        label = { Text(stringResource(R.string.nudge_start)) },
-                    )
-                    FilterChip(
-                        selected = nudgeTarget == TrimMarkerTarget.CURSOR,
-                        onClick = { nudgeTarget = TrimMarkerTarget.CURSOR },
-                        label = { Text(stringResource(R.string.nudge_cursor)) },
-                    )
-                    FilterChip(
-                        selected = nudgeTarget == TrimMarkerTarget.END,
-                        onClick = { nudgeTarget = TrimMarkerTarget.END },
-                        label = { Text(stringResource(R.string.nudge_end)) },
-                    )
-                    AssistChip(
-                        onClick = { viewModel.nudgeMarker(nudgeTarget, -100L) },
-                        label = { Text(stringResource(R.string.nudge_minus_100ms)) },
-                    )
-                    AssistChip(
-                        onClick = { viewModel.nudgeMarker(nudgeTarget, 100L) },
-                        label = { Text(stringResource(R.string.nudge_plus_100ms)) },
-                    )
+                // Mobile Fine Marker Nudge (±1 s / ±0.1 s) & Undo/Redo Action Hint
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FilterChip(
+                            selected = nudgeTarget == TrimMarkerTarget.START,
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                nudgeTarget = TrimMarkerTarget.START
+                            },
+                            label = { Text(stringResource(R.string.nudge_start), maxLines = 1) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        FilterChip(
+                            selected = nudgeTarget == TrimMarkerTarget.CURSOR,
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                nudgeTarget = TrimMarkerTarget.CURSOR
+                            },
+                            label = { Text(stringResource(R.string.nudge_cursor), maxLines = 1) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        FilterChip(
+                            selected = nudgeTarget == TrimMarkerTarget.END,
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                nudgeTarget = TrimMarkerTarget.END
+                            },
+                            label = { Text(stringResource(R.string.nudge_end), maxLines = 1) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        val steps = listOf(
+                            -1000L to R.string.nudge_minus_1s,
+                            -100L to R.string.nudge_minus_100ms,
+                            100L to R.string.nudge_plus_100ms,
+                            1000L to R.string.nudge_plus_1s,
+                        )
+                        steps.forEach { (deltaMs, labelRes) ->
+                            FilledTonalButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    viewModel.nudgeMarker(nudgeTarget, deltaMs)
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(labelRes),
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    maxLines = 1,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
                 }
 
                 if (state.canUndo || state.canRedo) {
@@ -398,23 +439,117 @@ fun EditorScreen(
 
                 when (activeTab) {
                     0 -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            ToolActionChip(Icons.Rounded.Crop, stringResource(R.string.action_trim)) { viewModel.trimToSelection() }
-                            ToolActionChip(Icons.Rounded.ContentCut, stringResource(R.string.action_cut)) { viewModel.cutSelection() }
-                            ToolActionChip(Icons.Rounded.CallSplit, stringResource(R.string.action_split)) { activeSheet = ActiveSheet.SPLIT }
-                            ToolActionChip(Icons.Rounded.VolumeOff, stringResource(R.string.action_silence)) { viewModel.silenceSelection() }
-                            ToolActionChip(Icons.Rounded.SpaceBar, stringResource(R.string.action_insert_silence)) { activeSheet = ActiveSheet.INSERT_SILENCE }
-                            ToolActionChip(Icons.Rounded.ContentCopy, stringResource(R.string.action_copy)) { viewModel.copySelection() }
-                            ToolActionChip(Icons.Rounded.ContentPaste, stringResource(R.string.action_paste), enabled = state.hasClipboard) {
-                                viewModel.pasteAtCursor()
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                Button(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.trimToSelection()
+                                    },
+                                    shape = RoundedCornerShape(16.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 56.dp),
+                                ) {
+                                    Icon(Icons.Rounded.Crop, contentDescription = null, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = stringResource(R.string.action_trim),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                        maxLines = 2,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
+                                FilledTonalButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.cutSelection()
+                                    },
+                                    shape = RoundedCornerShape(16.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 56.dp),
+                                ) {
+                                    Icon(Icons.Rounded.ContentCut, contentDescription = null, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = stringResource(R.string.action_cut),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                        maxLines = 2,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
                             }
-                            ToolActionChip(Icons.Rounded.Add, stringResource(R.string.action_append_file), onClick = onPickAppendFile)
-                            ToolActionChip(Icons.Rounded.Layers, stringResource(R.string.action_mix_overlay), onClick = onPickMixFile)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        activeSheet = ActiveSheet.SPLIT
+                                    },
+                                    shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 50.dp),
+                                ) {
+                                    Icon(Icons.AutoMirrored.Rounded.CallSplit, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = stringResource(R.string.action_split),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                FilledTonalButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.silenceSelection()
+                                    },
+                                    shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 50.dp),
+                                ) {
+                                    Icon(Icons.AutoMirrored.Rounded.VolumeOff, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = stringResource(R.string.action_silence),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                ToolActionChip(Icons.Rounded.SpaceBar, stringResource(R.string.action_insert_silence)) {
+                                    activeSheet = ActiveSheet.INSERT_SILENCE
+                                }
+                                ToolActionChip(Icons.Rounded.ContentCopy, stringResource(R.string.action_copy)) {
+                                    viewModel.copySelection()
+                                }
+                                ToolActionChip(
+                                    Icons.Rounded.ContentPaste,
+                                    stringResource(R.string.action_paste),
+                                    enabled = state.hasClipboard,
+                                ) {
+                                    viewModel.pasteAtCursor()
+                                }
+                                ToolActionChip(Icons.Rounded.Add, stringResource(R.string.action_append_file), onClick = onPickAppendFile)
+                                ToolActionChip(Icons.Rounded.Layers, stringResource(R.string.action_mix_overlay), onClick = onPickMixFile)
+                            }
                         }
                     }
                     1 -> {
@@ -424,13 +559,27 @@ fun EditorScreen(
                                 .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            ToolActionChip(Icons.Rounded.VolumeUp, stringResource(R.string.effect_gain_norm)) { activeSheet = ActiveSheet.GAIN_NORM }
-                            ToolActionChip(Icons.Rounded.TrendingUp, stringResource(R.string.effect_fade)) { activeSheet = ActiveSheet.FADE }
-                            ToolActionChip(Icons.Rounded.Equalizer, stringResource(R.string.effect_eq)) { activeSheet = ActiveSheet.EQ }
-                            ToolActionChip(Icons.Rounded.Speed, stringResource(R.string.effect_speed_pitch)) { activeSheet = ActiveSheet.SPEED_PITCH }
-                            ToolActionChip(Icons.Rounded.FilterAlt, stringResource(R.string.effect_filter_gate)) { activeSheet = ActiveSheet.FILTER_GATE }
-                            ToolActionChip(Icons.Rounded.SwapHoriz, stringResource(R.string.effect_reverse)) { viewModel.reverseSelection() }
-                            ToolActionChip(Icons.Rounded.Tune, stringResource(R.string.effect_channels)) { activeSheet = ActiveSheet.CHANNELS }
+                            ToolActionChip(Icons.AutoMirrored.Rounded.VolumeUp, stringResource(R.string.effect_gain_norm)) {
+                                activeSheet = ActiveSheet.GAIN_NORM
+                            }
+                            ToolActionChip(Icons.AutoMirrored.Rounded.TrendingUp, stringResource(R.string.effect_fade)) {
+                                activeSheet = ActiveSheet.FADE
+                            }
+                            ToolActionChip(Icons.Rounded.Equalizer, stringResource(R.string.effect_eq)) {
+                                activeSheet = ActiveSheet.EQ
+                            }
+                            ToolActionChip(Icons.Rounded.Speed, stringResource(R.string.effect_speed_pitch)) {
+                                activeSheet = ActiveSheet.SPEED_PITCH
+                            }
+                            ToolActionChip(Icons.Rounded.FilterAlt, stringResource(R.string.effect_filter_gate)) {
+                                activeSheet = ActiveSheet.FILTER_GATE
+                            }
+                            ToolActionChip(Icons.Rounded.SwapHoriz, stringResource(R.string.effect_reverse)) {
+                                viewModel.reverseSelection()
+                            }
+                            ToolActionChip(Icons.Rounded.Tune, stringResource(R.string.effect_channels)) {
+                                activeSheet = ActiveSheet.CHANNELS
+                            }
                         }
                     }
                     else -> {
@@ -439,8 +588,14 @@ fun EditorScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Button(
-                                onClick = { activeSheet = ActiveSheet.METADATA },
-                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    activeSheet = ActiveSheet.METADATA
+                                },
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 52.dp),
                             ) {
                                 Icon(Icons.Rounded.Tag, contentDescription = null)
                                 Spacer(Modifier.width(6.dp))
@@ -579,11 +734,19 @@ private fun ToolActionChip(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    AssistChip(
-        onClick = onClick,
+    val haptic = LocalHapticFeedback.current
+    FilledTonalButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
         enabled = enabled,
-        label = { Text(label) },
-        leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-        colors = AssistChipDefaults.assistChipColors(),
-    )
+        shape = RoundedCornerShape(14.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier.heightIn(min = 46.dp),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    }
 }

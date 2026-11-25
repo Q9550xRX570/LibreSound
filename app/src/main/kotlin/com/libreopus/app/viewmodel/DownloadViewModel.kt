@@ -174,6 +174,15 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                     engineStatus = engineStatus,
                 )
             }
+            if (downloader.isAvailable) {
+                launch {
+                    val channel = _state.value.updateChannel
+                    val refreshed = runCatching { downloader.refreshEngineIfStale(ctx, channel) }.getOrNull()
+                    if (refreshed != null) {
+                        _state.update { it.copy(engineStatus = refreshed) }
+                    }
+                }
+            }
         }
 
         viewModelScope.launch {
@@ -513,8 +522,16 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 _state.update { it.copy(isFetchingPreview = false) }
                 throw ce
             } catch (t: Throwable) {
-                val diag = (t as? YtDlpClassifiedException)?.diagnostic
-                    ?: YtDlpErrorClassifier.classify(t.localizedMessage ?: "Preview failed")
+                val diag = (t as? YtDlpClassifiedException)?.diagnostic ?: run {
+                    val primary = t.localizedMessage?.trim().orEmpty()
+                    val causeMsg = t.cause?.message?.trim().orEmpty()
+                    val detail = listOfNotNull(
+                        primary.takeIf { it.isNotBlank() },
+                        causeMsg.takeIf { it.isNotBlank() && it != primary },
+                        t::class.java.simpleName.takeIf { it.isNotBlank() },
+                    ).joinToString(" | ").ifBlank { "Preview failed" }
+                    YtDlpErrorClassifier.classify(detail)
+                }
                 _state.update {
                     it.copy(
                         isFetchingPreview = false,

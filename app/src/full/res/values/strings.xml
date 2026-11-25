@@ -7,4 +7,6 @@
     <string name="download_notif_complete_title">Download complete</string>
     <string name="download_notif_failed_title">Download failed</string>
     <string name="download_notif_cancel">Cancel</string>
+    <string name="ytdlp_auto_updating_retry">Updating yt-dlp and retrying…</string>
+    <string name="ytdlp_fallback_client_retry">Retrying with alternate YouTube client…</string>
 </resources>

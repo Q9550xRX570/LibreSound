@@ -233,7 +233,10 @@
     <string name="ytdlp_err_ffmpeg">Bu özel komut FFmpeg gerektiriyor; uygulama boyutunu düşük tutmak için FFmpeg dahil edilmedi. -x olmadan doğrudan bir akış seçin.</string>
     <string name="ytdlp_err_network">Bağlantı veya zaman aşımı hatası oluştu. İnternetinizi kontrol edin ya da IPv4 Zorla seçeneğini deneyin.</string>
     <string name="ytdlp_err_unsupported">Bu bağlantı mevcut yt-dlp çıkarıcıları tarafından desteklenmiyor. yt-dlp güncellemesi sorunu çözebilir.</string>
+    <string name="ytdlp_err_extractor_format">Medya çözümleme veya biçim seçimi başarısız oldu. yt-dlp\'yi güncellemek veya farklı bir YouTube istemcisiyle yeniden denemek sorunu çözebilir.</string>
     <string name="ytdlp_err_unavailable">Bu medya kullanılamıyor, silinmiş veya bölgenizde engellenmiş.</string>
+    <string name="ytdlp_err_generic_retry">İndirme tamamlanamadı. Yeniden Deneyin, yt-dlp\'yi Güncelleyin veya aşağıdaki Teknik Detaylar\'ı inceleyin.</string>
+    <string name="ytdlp_action_retry">Yeniden Dene</string>
     <string name="ytdlp_action_add_cookies">Çerez Ekle</string>
     <string name="ytdlp_action_force_ipv4">IPv4 Aç</string>
     <string name="ytdlp_action_update_engine">yt-dlp Güncelle</string>
@@ -308,8 +311,10 @@
     <string name="nudge_start">Baş</string>
     <string name="nudge_cursor">İmleç</string>
     <string name="nudge_end">Son</string>
+    <string name="nudge_minus_1s">-1sn</string>
     <string name="nudge_minus_100ms">-0.1sn</string>
     <string name="nudge_plus_100ms">+0.1sn</string>
+    <string name="nudge_plus_1s">+1sn</string>
     <string name="editor_undo_label">Geri Al: %1$s</string>
     <string name="editor_redo_label">İleri Al: %1$s</string>
 

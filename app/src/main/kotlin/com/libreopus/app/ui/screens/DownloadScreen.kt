@@ -668,9 +668,12 @@ fun DownloadScreen(
                                 YoutubeClientMode.entries.forEach { mode ->
                                     val label = when (mode) {
                                         YoutubeClientMode.AUTO -> stringResource(R.string.download_client_auto)
+                                        YoutubeClientMode.ANDROID_VR -> "Android VR"
                                         YoutubeClientMode.ANDROID -> "Android"
                                         YoutubeClientMode.IOS -> "iOS"
                                         YoutubeClientMode.WEB_SAFARI -> "Web Safari"
+                                        YoutubeClientMode.WEB_EMBEDDED -> "Web Embedded"
+                                        YoutubeClientMode.TV_DOWNGRADED -> "TV Downgraded"
                                         YoutubeClientMode.MWEB -> "mWeb"
                                         YoutubeClientMode.TV -> "TV"
                                     }
@@ -891,6 +894,7 @@ fun DownloadScreen(
                     showDetails = showErrorDetails,
                     isUpdatingEngine = state.isUpdatingEngine,
                     onToggleDetails = { showErrorDetails = !showErrorDetails },
+                    onRetry = startDownloadWithPermissionCheck,
                     onAddCookies = { showCookieSheet = true },
                     onEnableIpv4 = { viewModel.setForceIpv4(true) },
                     onUpdateEngine = { viewModel.updateEngine() },
@@ -1499,6 +1503,7 @@ private fun DiagnosticErrorCard(
     showDetails: Boolean,
     isUpdatingEngine: Boolean,
     onToggleDetails: () -> Unit,
+    onRetry: () -> Unit,
     onAddCookies: () -> Unit,
     onEnableIpv4: () -> Unit,
     onUpdateEngine: () -> Unit,
@@ -1508,11 +1513,12 @@ private fun DiagnosticErrorCard(
         YtDlpErrorKind.AGE_RESTRICTED_NEEDS_COOKIES -> stringResource(R.string.ytdlp_err_age)
         YtDlpErrorKind.PRIVATE_OR_AUTH_NEEDS_COOKIES -> stringResource(R.string.ytdlp_err_auth)
         YtDlpErrorKind.HTTP_403_FORBIDDEN -> stringResource(R.string.ytdlp_err_403)
+        YtDlpErrorKind.EXTRACTOR_OR_FORMAT_FAILED -> stringResource(R.string.ytdlp_err_extractor_format)
         YtDlpErrorKind.FFMPEG_REQUIRED -> stringResource(R.string.ytdlp_err_ffmpeg)
         YtDlpErrorKind.NETWORK_OR_TIMEOUT -> stringResource(R.string.ytdlp_err_network)
         YtDlpErrorKind.UNSUPPORTED_URL -> stringResource(R.string.ytdlp_err_unsupported)
         YtDlpErrorKind.UNAVAILABLE -> stringResource(R.string.ytdlp_err_unavailable)
-        YtDlpErrorKind.UNKNOWN -> diagnostic.rawDetails.ifBlank { "Download failed" }
+        YtDlpErrorKind.UNKNOWN -> stringResource(R.string.ytdlp_err_generic_retry)
     }
 
     Surface(
@@ -1545,47 +1551,53 @@ private fun DiagnosticErrorCard(
                 YtDlpErrorKind.AGE_RESTRICTED_NEEDS_COOKIES,
                 YtDlpErrorKind.PRIVATE_OR_AUTH_NEEDS_COOKIES,
                 YtDlpErrorKind.HTTP_403_FORBIDDEN,
+                YtDlpErrorKind.EXTRACTOR_OR_FORMAT_FAILED,
+                YtDlpErrorKind.UNKNOWN,
             )
             val canTryIpv4 = diagnostic.kind in setOf(
                 YtDlpErrorKind.HTTP_403_FORBIDDEN,
                 YtDlpErrorKind.NETWORK_OR_TIMEOUT,
+                YtDlpErrorKind.UNKNOWN,
             )
             val canTryUpdate = diagnostic.kind in setOf(
                 YtDlpErrorKind.HTTP_403_FORBIDDEN,
+                YtDlpErrorKind.EXTRACTOR_OR_FORMAT_FAILED,
                 YtDlpErrorKind.UNSUPPORTED_URL,
                 YtDlpErrorKind.BOT_CHECK_NEEDS_COOKIES,
+                YtDlpErrorKind.UNKNOWN,
             )
 
-            if (needsCookies || canTryIpv4 || canTryUpdate) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    if (needsCookies) {
-                        FilledTonalButton(onClick = onAddCookies) {
-                            Text(stringResource(R.string.ytdlp_action_add_cookies))
-                        }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                FilledTonalButton(onClick = onRetry) {
+                    Text(stringResource(R.string.ytdlp_action_retry))
+                }
+                if (canTryUpdate) {
+                    OutlinedButton(onClick = onUpdateEngine, enabled = !isUpdatingEngine) {
+                        Text(
+                            if (isUpdatingEngine) {
+                                stringResource(R.string.settings_ytdlp_updating)
+                            } else {
+                                stringResource(R.string.ytdlp_action_update_engine)
+                            },
+                        )
                     }
-                    if (canTryIpv4) {
-                        OutlinedButton(onClick = onEnableIpv4) {
-                            Text(stringResource(R.string.ytdlp_action_force_ipv4))
-                        }
+                }
+                if (needsCookies) {
+                    OutlinedButton(onClick = onAddCookies) {
+                        Text(stringResource(R.string.ytdlp_action_add_cookies))
                     }
-                    if (canTryUpdate) {
-                        OutlinedButton(onClick = onUpdateEngine, enabled = !isUpdatingEngine) {
-                            Text(
-                                if (isUpdatingEngine) {
-                                    stringResource(R.string.settings_ytdlp_updating)
-                                } else {
-                                    stringResource(R.string.ytdlp_action_update_engine)
-                                },
-                            )
-                        }
+                }
+                if (canTryIpv4) {
+                    OutlinedButton(onClick = onEnableIpv4) {
+                        Text(stringResource(R.string.ytdlp_action_force_ipv4))
                     }
                 }
             }
 
-            if (diagnostic.rawDetails.isNotBlank() && diagnostic.kind != YtDlpErrorKind.UNKNOWN) {
+            if (diagnostic.rawDetails.isNotBlank()) {
                 TextButton(onClick = onToggleDetails) {
                     Text(
                         stringResource(R.string.ytdlp_show_details),

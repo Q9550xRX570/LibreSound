@@ -233,7 +233,10 @@
     <string name="ytdlp_err_ffmpeg">This custom command requires FFmpeg post-processing, which is omitted to keep the app lean. Choose a native stream without -x instead.</string>
     <string name="ytdlp_err_network">Network or timeout error while connecting. Check your internet connection or try Force IPv4.</string>
     <string name="ytdlp_err_unsupported">This URL is not supported by the current yt-dlp extractors. Updating yt-dlp may add support.</string>
+    <string name="ytdlp_err_extractor_format">Media extraction or format selection failed on the remote site. Updating yt-dlp or retrying with another YouTube client may resolve it.</string>
     <string name="ytdlp_err_unavailable">This media is unavailable, removed, or blocked in your region.</string>
+    <string name="ytdlp_err_generic_retry">Download could not complete. Try Retrying, Updating yt-dlp, or inspect Technical Details below.</string>
+    <string name="ytdlp_action_retry">Retry</string>
     <string name="ytdlp_action_add_cookies">Add Cookies</string>
     <string name="ytdlp_action_force_ipv4">Enable IPv4</string>
     <string name="ytdlp_action_update_engine">Update yt-dlp</string>
@@ -308,8 +311,10 @@
     <string name="nudge_start">Start</string>
     <string name="nudge_cursor">Cursor</string>
     <string name="nudge_end">End</string>
+    <string name="nudge_minus_1s">-1s</string>
     <string name="nudge_minus_100ms">-0.1s</string>
     <string name="nudge_plus_100ms">+0.1s</string>
+    <string name="nudge_plus_1s">+1s</string>
     <string name="editor_undo_label">Undo: %1$s</string>
     <string name="editor_redo_label">Redo: %1$s</string>
 

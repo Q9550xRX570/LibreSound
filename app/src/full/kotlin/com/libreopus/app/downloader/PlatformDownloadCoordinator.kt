@@ -119,10 +119,12 @@ private class FullDownloadCoordinator(
                     )
                 }
 
-                val savedImage = artifact.imageFile?.let { img ->
+                val savedImageInfo = artifact.imageFile?.let { img ->
                     val mime = artifact.imageMimeType ?: "image/jpeg"
                     MediaStorageHelper.saveImageToPictures(appContext, img.name, mime, img)
+                        ?.let { path -> img to path }
                 }
+                val savedImage = savedImageInfo?.second
 
                 val savedSubs = artifact.subtitleFiles.mapNotNull { sub ->
                     MediaStorageHelper.saveFileToDownloads(appContext, sub.name, "text/plain", sub)
@@ -151,18 +153,19 @@ private class FullDownloadCoordinator(
                             ),
                         )
                     }
-                    if (isEmpty() && savedImage != null && artifact.imageFile != null) {
+                    if (isEmpty() && savedImageInfo != null) {
+                        val (imgFile, savedImagePath) = savedImageInfo
                         add(
                             DownloadHistoryEntry(
                                 id = UUID.randomUUID().toString(),
-                                title = artifact.imageDisplayName ?: artifact.imageFile.name,
+                                title = artifact.imageDisplayName ?: imgFile.name,
                                 sourceUrl = sourceUrl,
-                                savedPath = savedImage,
+                                savedPath = savedImagePath,
                                 contentUriString = null,
-                                cacheFilePath = artifact.imageFile.absolutePath,
+                                cacheFilePath = imgFile.absolutePath,
                                 mimeType = artifact.imageMimeType ?: "image/jpeg",
                                 isVideo = false,
-                                sizeBytes = artifact.imageFile.length(),
+                                sizeBytes = imgFile.length(),
                                 timestampMs = nowMs,
                             ),
                         )
@@ -197,8 +200,16 @@ private class FullDownloadCoordinator(
                 _state.update { it.copy(isRunning = false) }
                 throw ce
             } catch (t: Throwable) {
-                val diag = (t as? YtDlpClassifiedException)?.diagnostic
-                    ?: YtDlpErrorClassifier.classify(t.localizedMessage ?: "Download failed")
+                val diag = (t as? YtDlpClassifiedException)?.diagnostic ?: run {
+                    val causeMsg = t.cause?.message?.trim().orEmpty()
+                    val primaryMsg = t.localizedMessage?.trim().orEmpty()
+                    val detail = listOfNotNull(
+                        primaryMsg.takeIf { it.isNotBlank() },
+                        causeMsg.takeIf { it.isNotBlank() && it != primaryMsg },
+                        t::class.java.simpleName.takeIf { it.isNotBlank() },
+                    ).joinToString(" | ").ifBlank { "Download failed" }
+                    YtDlpErrorClassifier.classify(detail)
+                }
                 _state.update { st ->
                     val nextLogs = if (diag.rawDetails.isNotBlank()) {
                         (st.logs + diag.rawDetails.lines().filter { it.isNotBlank() }).takeLast(80)

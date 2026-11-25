@@ -15,9 +15,9 @@ enum class DownloadPreset {
 }
 
 enum class AudioFormatPreference(val formatSelector: String) {
-    AUTO_BEST("bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio"),
-    OPUS_WEBM("bestaudio[ext=webm]/bestaudio[acodec*=opus]/bestaudio"),
-    M4A_AAC("bestaudio[ext=m4a]/bestaudio[acodec*=mp4a]/bestaudio"),
+    AUTO_BEST("bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best[acodec!=none]/best"),
+    OPUS_WEBM("bestaudio[ext=webm]/bestaudio[acodec*=opus]/bestaudio/best[acodec!=none]/best"),
+    M4A_AAC("bestaudio[ext=m4a]/bestaudio[acodec*=mp4a]/bestaudio/best[acodec!=none]/best"),
 }
 
 enum class FilenameTemplate(val pattern: String) {
@@ -30,9 +30,12 @@ enum class FilenameTemplate(val pattern: String) {
 
 enum class YoutubeClientMode(val clientArg: String) {
     AUTO(""),
+    ANDROID_VR("android_vr"),
     ANDROID("android"),
     IOS("ios"),
     WEB_SAFARI("web_safari"),
+    WEB_EMBEDDED("web_embedded"),
+    TV_DOWNGRADED("tv_downgraded"),
     MWEB("mweb"),
     TV("tv"),
 }
@@ -223,6 +226,8 @@ data class DownloadExecutionOptions(
     val proxyUrl: String = "",
     val socketTimeoutSec: Int = 20,
     val retries: Int = 3,
+    val cacheDirPath: String? = null,
+    val enableRemoteEjs: Boolean = true,
 )
 
 data class MediaFormatOption(
@@ -277,6 +282,7 @@ enum class YtDlpErrorKind {
     AGE_RESTRICTED_NEEDS_COOKIES,
     PRIVATE_OR_AUTH_NEEDS_COOKIES,
     HTTP_403_FORBIDDEN,
+    EXTRACTOR_OR_FORMAT_FAILED,
     FFMPEG_REQUIRED,
     NETWORK_OR_TIMEOUT,
     UNSUPPORTED_URL,
@@ -319,6 +325,11 @@ interface MediaDownloader {
     val isAvailable: Boolean
 
     suspend fun getEngineStatus(context: Context): YtDlpEngineStatus
+
+    suspend fun refreshEngineIfStale(
+        context: Context,
+        channel: YtDlpUpdateChannel = YtDlpUpdateChannel.STABLE,
+    ): YtDlpEngineStatus? = null
 
     suspend fun updateEngine(context: Context, channel: YtDlpUpdateChannel): YtDlpUpdateOutcome
 
@@ -402,6 +413,7 @@ object PresetCommandBuilder {
         "--audio-format", "--audio-quality",
         "--sub-langs", "--sleep-requests", "--sleep-interval",
         "-N", "--concurrent-fragments",
+        "--cache-dir", "--remote-components",
         "--match-filter", "--compat-options",
     )
 
@@ -492,6 +504,13 @@ object PresetCommandBuilder {
             val proxy = execOptions.proxyUrl.trim()
             if (proxy.isNotBlank() && !hasToken("--proxy")) {
                 opts += "--proxy" to proxy
+            }
+            val cacheDir = execOptions.cacheDirPath?.trim()?.takeIf { it.isNotBlank() }
+            if (cacheDir != null && !hasToken("--cache-dir") && !hasToken("--no-cache-dir")) {
+                opts += "--cache-dir" to cacheDir
+            }
+            if (execOptions.enableRemoteEjs && !hasToken("--remote-components")) {
+                opts += "--remote-components" to "ejs:github"
             }
             if (!hasToken("--extractor-args")) {
                 buildExtractorArgsString(execOptions)?.let { extArg ->
@@ -630,10 +649,10 @@ object PresetCommandBuilder {
             preset = preset,
             customArgs = customArgs,
             outputTemplate = "",
-            execOptions = execOptions.copy(cookieFilePath = null),
+            execOptions = execOptions.copy(cookieFilePath = null, cacheDirPath = null),
         )
         return plan.options
-            .filterNot { it.first == "-o" || it.first == "--newline" }
+            .filterNot { it.first == "-o" || it.first == "--newline" || it.first == "--cache-dir" }
             .joinToString(" ") { (flag, value) ->
                 if (value == null) {
                     flag
@@ -862,6 +881,17 @@ object YtDlpErrorClassifier {
                 lower.contains("unable to download video data: http error 403") ->
                 YtDlpErrorKind.HTTP_403_FORBIDDEN
 
+            lower.contains("requested format is not available") ||
+                lower.contains("no video formats found") ||
+                lower.contains("unable to extract") ||
+                lower.contains("nsig extraction failed") ||
+                lower.contains("signature extraction failed") ||
+                lower.contains("no supported javascript runtime") ||
+                lower.contains("remote component challenge solver") ||
+                lower.contains("only images are available for download") ||
+                lower.contains("playability status: unplayable") ->
+                YtDlpErrorKind.EXTRACTOR_OR_FORMAT_FAILED
+
             lower.contains("ffmpeg is not installed") ||
                 lower.contains("ffprobe and ffmpeg not found") ||
                 (lower.contains("ffmpeg") && lower.contains("postprocessing")) ->
@@ -873,6 +903,7 @@ object YtDlpErrorClassifier {
                 lower.contains("temporary failure in name resolution") ||
                 lower.contains("failed to resolve") ||
                 lower.contains("unable to download webpage") ||
+                lower.contains("unable to download api page") ||
                 lower.contains("ssl") ||
                 lower.contains("network is unreachable") ->
                 YtDlpErrorKind.NETWORK_OR_TIMEOUT
