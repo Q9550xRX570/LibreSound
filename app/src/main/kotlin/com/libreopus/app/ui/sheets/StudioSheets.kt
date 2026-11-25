@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -25,10 +26,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,14 +42,18 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.libreopus.app.R
+import com.libreopus.app.data.Formatters
 import com.libreopus.dsp.effects.ChannelOperation
 import com.libreopus.dsp.effects.EqPreset
 import com.libreopus.dsp.effects.EqualizerProcessor
 import com.libreopus.dsp.effects.FadeCurve
 import com.libreopus.dsp.effects.FadeProcessor
+import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -391,4 +398,198 @@ fun ChannelSheet(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun MixOverlaySheet(
+    overlayDisplayName: String,
+    timelineDurationMs: Long,
+    playheadMs: Long,
+    selectionStartMs: Long,
+    onConfirm: (offsetMs: Long, baseGainDb: Float, overlayGainDb: Float) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val maxDurMs = max(1000L, timelineDurationMs)
+    var offsetMs by remember { mutableLongStateOf(playheadMs.coerceIn(0L, maxDurMs)) }
+    var baseGainDb by remember { mutableFloatStateOf(0f) }
+    var overlayGainDb by remember { mutableFloatStateOf(-3f) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(stringResource(R.string.mix_dialog_title), style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = stringResource(R.string.mix_selected_file, overlayDisplayName),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            Text(
+                text = stringResource(R.string.mix_offset_label, Formatters.formatDurationMs(offsetMs)),
+                style = MaterialTheme.typography.labelLarge,
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = offsetMs == playheadMs.coerceIn(0L, maxDurMs),
+                    onClick = { offsetMs = playheadMs.coerceIn(0L, maxDurMs) },
+                    label = { Text(stringResource(R.string.mix_offset_cursor)) },
+                )
+                FilterChip(
+                    selected = offsetMs == selectionStartMs.coerceIn(0L, maxDurMs),
+                    onClick = { offsetMs = selectionStartMs.coerceIn(0L, maxDurMs) },
+                    label = { Text(stringResource(R.string.mix_offset_selection)) },
+                )
+                FilterChip(
+                    selected = offsetMs == 0L,
+                    onClick = { offsetMs = 0L },
+                    label = { Text(stringResource(R.string.mix_offset_start)) },
+                )
+            }
+            @Suppress("DEPRECATION")
+            Slider(
+                value = offsetMs.toFloat(),
+                onValueChange = { offsetMs = it.roundToLong().coerceIn(0L, maxDurMs) },
+                valueRange = 0f..maxDurMs.toFloat(),
+            )
+
+            Text(stringResource(R.string.mix_base_gain, baseGainDb))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = baseGainDb,
+                onValueChange = { baseGainDb = (it * 2f).roundToInt() / 2f },
+                valueRange = -18f..6f,
+            )
+
+            Text(stringResource(R.string.mix_overlay_gain, overlayGainDb))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = overlayGainDb,
+                onValueChange = { overlayGainDb = (it * 2f).roundToInt() / 2f },
+                valueRange = -18f..6f,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.cancel))
+                }
+                Button(
+                    onClick = {
+                        onConfirm(offsetMs, baseGainDb, overlayGainDb)
+                        onDismiss()
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.apply))
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SplitOptionsSheet(
+    playheadMs: Long,
+    durationMs: Long,
+    onKeepLeft: () -> Unit,
+    onKeepRight: () -> Unit,
+    onExportBoth: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val canKeepLeft = playheadMs > 0L
+    val canKeepRight = playheadMs < durationMs
+    val canSplitInterior = canKeepLeft && canKeepRight
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.split_sheet_title, Formatters.formatDurationMs(playheadMs)),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            FilledTonalButton(
+                onClick = { onKeepLeft(); onDismiss() },
+                enabled = canKeepLeft,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.split_keep_left))
+            }
+            FilledTonalButton(
+                onClick = { onKeepRight(); onDismiss() },
+                enabled = canKeepRight,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.split_keep_right))
+            }
+            Button(
+                onClick = { onExportBoth(); onDismiss() },
+                enabled = canSplitInterior,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.split_export_both))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun InsertSilenceDialog(
+    onConfirm: (durationMs: Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var durationMs by remember { mutableLongStateOf(1000L) }
+    val presetsMs = listOf(250L, 500L, 1000L, 2000L, 5000L)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.silence_insert_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(stringResource(R.string.silence_insert_duration, durationMs / 1000f))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    presetsMs.forEach { preset ->
+                        FilterChip(
+                            selected = durationMs == preset,
+                            onClick = { durationMs = preset },
+                            label = { Text(if (preset < 1000L) "${preset}ms" else "${preset / 1000}s") },
+                        )
+                    }
+                }
+                @Suppress("DEPRECATION")
+                Slider(
+                    value = durationMs.toFloat(),
+                    onValueChange = { durationMs = ((it / 50f).roundToLong() * 50L).coerceIn(100L, 10_000L) },
+                    valueRange = 100f..10_000f,
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(durationMs); onDismiss() }) {
+                Text(stringResource(R.string.apply))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }

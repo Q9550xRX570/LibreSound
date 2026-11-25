@@ -87,6 +87,11 @@ object MediaStorageHelper {
         context.contentResolver.update(uri, values, null, null)
     }
 
+    data class SavedStorageEntry(
+        val displayPath: String,
+        val contentUriString: String?,
+    )
+
     fun saveAudioFileToMusic(context: Context, fileName: String, mimeType: String, sourceFile: File) {
         saveDownloadedMediaToStorage(context, fileName, mimeType, sourceFile)
     }
@@ -103,9 +108,19 @@ object MediaStorageHelper {
         isVideo: Boolean = mimeType.startsWith("video/") ||
             fileName.endsWith(".mp4", ignoreCase = true) ||
             fileName.endsWith(".mkv", ignoreCase = true),
-    ): String? {
+    ): String? = saveDownloadedMediaDetailed(context, fileName, mimeType, sourceFile, isVideo)?.displayPath
+
+    fun saveDownloadedMediaDetailed(
+        context: Context,
+        fileName: String,
+        mimeType: String,
+        sourceFile: File,
+        isVideo: Boolean = mimeType.startsWith("video/") ||
+            fileName.endsWith(".mp4", ignoreCase = true) ||
+            fileName.endsWith(".mkv", ignoreCase = true),
+    ): SavedStorageEntry? {
         if (isVideo) {
-            val videoSaved = insertAndWrite(
+            val videoUri = insertAndWrite(
                 context = context,
                 collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                 relativePath = "${Environment.DIRECTORY_MOVIES}/LibreOpus",
@@ -117,9 +132,11 @@ object MediaStorageHelper {
                 mimeType = if (mimeType.startsWith("video/")) mimeType else "video/mp4",
                 sourceFile = sourceFile,
             )
-            if (videoSaved) return "Movies/LibreOpus/$fileName"
+            if (videoUri != null) {
+                return SavedStorageEntry("Movies/LibreOpus/$fileName", videoUri.toString())
+            }
         } else {
-            val musicSaved = insertAndWrite(
+            val musicUri = insertAndWrite(
                 context = context,
                 collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 relativePath = "${Environment.DIRECTORY_MUSIC}/LibreOpus",
@@ -131,10 +148,12 @@ object MediaStorageHelper {
                 mimeType = mimeType,
                 sourceFile = sourceFile,
             )
-            if (musicSaved) return "Music/LibreOpus/$fileName"
+            if (musicUri != null) {
+                return SavedStorageEntry("Music/LibreOpus/$fileName", musicUri.toString())
+            }
         }
 
-        return saveFileToDownloads(context, fileName, mimeType, sourceFile)
+        return saveFileToDownloadsDetailed(context, fileName, mimeType, sourceFile)
     }
 
     fun saveFileToDownloads(
@@ -142,9 +161,16 @@ object MediaStorageHelper {
         fileName: String,
         mimeType: String,
         sourceFile: File,
-    ): String? {
+    ): String? = saveFileToDownloadsDetailed(context, fileName, mimeType, sourceFile)?.displayPath
+
+    fun saveFileToDownloadsDetailed(
+        context: Context,
+        fileName: String,
+        mimeType: String,
+        sourceFile: File,
+    ): SavedStorageEntry? {
         val downloadMime = if (mimeType == "audio/*" || mimeType.isBlank()) "application/octet-stream" else mimeType
-        val dlSaved = insertAndWrite(
+        val dlUri = insertAndWrite(
             context = context,
             collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI,
             relativePath = "${Environment.DIRECTORY_DOWNLOADS}/LibreOpus",
@@ -156,11 +182,11 @@ object MediaStorageHelper {
             mimeType = downloadMime,
             sourceFile = sourceFile,
         )
-        return if (dlSaved) "Download/LibreOpus/$fileName" else null
+        return dlUri?.let { SavedStorageEntry("Download/LibreOpus/$fileName", it.toString()) }
     }
 
     fun saveImageToPictures(context: Context, fileName: String, mimeType: String, sourceFile: File): String? {
-        val saved = insertAndWrite(
+        val savedUri = insertAndWrite(
             context = context,
             collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             relativePath = "${Environment.DIRECTORY_PICTURES}/LibreOpus",
@@ -172,7 +198,7 @@ object MediaStorageHelper {
             mimeType = mimeType,
             sourceFile = sourceFile,
         )
-        return if (saved) "Pictures/LibreOpus/$fileName" else null
+        return if (savedUri != null) "Pictures/LibreOpus/$fileName" else null
     }
 
     private fun insertAndWrite(
@@ -186,26 +212,33 @@ object MediaStorageHelper {
         fileName: String,
         mimeType: String,
         sourceFile: File,
-    ): Boolean {
+    ): Uri? {
         val values = ContentValues().apply {
             put(displayNameCol, fileName)
             put(mimeTypeCol, mimeType)
             put(relativePathCol, relativePath)
             put(isPendingCol, 1)
         }
-        val uri = runCatching { context.contentResolver.insert(collection, values) }.getOrNull() ?: return false
+        val uri = runCatching { context.contentResolver.insert(collection, values) }.getOrNull() ?: return null
         return runCatching {
             context.contentResolver.openOutputStream(uri)?.use { out ->
                 sourceFile.inputStream().use { input -> input.copyTo(out, 32768) }
             } ?: error("Cannot open MediaStore stream")
             val done = ContentValues().apply { put(isPendingCol, 0) }
             context.contentResolver.update(uri, done, null, null)
-            true
+            uri
         }.getOrElse {
             runCatching { context.contentResolver.delete(uri, null, null) }
-            false
+            null
         }
     }
+
+    fun createShareUriIntent(context: Context, contentUri: Uri, mimeType: String): Intent =
+        Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, contentUri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
 
     fun createShareIntent(context: Context, tempFile: File, mimeType: String): Intent {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)

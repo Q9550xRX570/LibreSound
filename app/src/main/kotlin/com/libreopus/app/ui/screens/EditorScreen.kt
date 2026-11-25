@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.SpaceBar
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material.icons.rounded.TrendingUp
@@ -49,6 +50,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledIconToggleButton
 import androidx.compose.material3.FilledTonalButton
@@ -87,16 +89,20 @@ import com.libreopus.app.ui.sheets.ExportSheet
 import com.libreopus.app.ui.sheets.FadeSheet
 import com.libreopus.app.ui.sheets.FilterGateSheet
 import com.libreopus.app.ui.sheets.GainNormalizeSheet
+import com.libreopus.app.ui.sheets.InsertSilenceDialog
 import com.libreopus.app.ui.sheets.MetadataSheet
+import com.libreopus.app.ui.sheets.MixOverlaySheet
 import com.libreopus.app.ui.sheets.SpeedPitchSheet
+import com.libreopus.app.ui.sheets.SplitOptionsSheet
 import com.libreopus.app.viewmodel.EditorUiState
 import com.libreopus.app.viewmodel.EditorViewModel
 import com.libreopus.audio.api.AudioContainerFormat
 import com.libreopus.audio.api.ExportConfig
 import com.libreopus.audio.api.ExportFormat
+import kotlin.math.abs
 
 private enum class ActiveSheet {
-    NONE, GAIN_NORM, FADE, EQ, SPEED_PITCH, FILTER_GATE, CHANNELS, METADATA, EXPORT
+    NONE, GAIN_NORM, FADE, EQ, SPEED_PITCH, FILTER_GATE, CHANNELS, METADATA, EXPORT, SPLIT, INSERT_SILENCE
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,6 +118,9 @@ fun EditorScreen(
     onPickMixFile: () -> Unit,
     onPickCoverImage: (onPicked: (ByteArray, String) -> Unit) -> Unit,
     onExportSaveAs: (ExportConfig) -> Unit,
+    pendingMixOverlayName: String? = null,
+    onConfirmMixOverlay: (offsetMs: Long, baseGainDb: Float, overlayGainDb: Float) -> Unit = { _, _, _ -> },
+    onDismissMixOverlay: () -> Unit = {},
 ) {
     var zoom by remember { mutableFloatStateOf(1f) }
     var scrollFrac by remember { mutableFloatStateOf(0f) }
@@ -277,6 +286,38 @@ fun EditorScreen(
                                     .height(6.dp),
                             )
                         }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            val speedLabel = if (state.playbackSpeed == state.playbackSpeed.toInt().toFloat()) {
+                                "${state.playbackSpeed.toInt()}x"
+                            } else {
+                                "${state.playbackSpeed}x"
+                            }
+                            Text(
+                                text = stringResource(R.string.transport_speed, speedLabel),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+                            speeds.forEach { spd ->
+                                val chipText = when (spd) {
+                                    1.0f -> "1x"
+                                    2.0f -> "2x"
+                                    else -> "${spd}x"
+                                }
+                                FilterChip(
+                                    selected = abs(state.playbackSpeed - spd) < 0.02f,
+                                    onClick = { viewModel.setPlaybackSpeed(spd) },
+                                    label = { Text(chipText) },
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -306,8 +347,9 @@ fun EditorScreen(
                         ) {
                             ToolActionChip(Icons.Rounded.Crop, stringResource(R.string.action_trim)) { viewModel.trimToSelection() }
                             ToolActionChip(Icons.Rounded.ContentCut, stringResource(R.string.action_cut)) { viewModel.cutSelection() }
-                            ToolActionChip(Icons.Rounded.CallSplit, stringResource(R.string.action_split)) { viewModel.splitKeepLeft() }
+                            ToolActionChip(Icons.Rounded.CallSplit, stringResource(R.string.action_split)) { activeSheet = ActiveSheet.SPLIT }
                             ToolActionChip(Icons.Rounded.VolumeOff, stringResource(R.string.action_silence)) { viewModel.silenceSelection() }
+                            ToolActionChip(Icons.Rounded.SpaceBar, stringResource(R.string.action_insert_silence)) { activeSheet = ActiveSheet.INSERT_SILENCE }
                             ToolActionChip(Icons.Rounded.ContentCopy, stringResource(R.string.action_copy)) { viewModel.copySelection() }
                             ToolActionChip(Icons.Rounded.ContentPaste, stringResource(R.string.action_paste), enabled = state.hasClipboard) {
                                 viewModel.pasteAtCursor()
@@ -426,7 +468,30 @@ fun EditorScreen(
             onExportSaveAs = onExportSaveAs,
             onDismiss = { activeSheet = ActiveSheet.NONE },
         )
+        ActiveSheet.SPLIT -> SplitOptionsSheet(
+            playheadMs = state.playheadMs,
+            durationMs = state.durationMs,
+            onKeepLeft = { viewModel.splitKeepLeft() },
+            onKeepRight = { viewModel.splitKeepRight() },
+            onExportBoth = { viewModel.splitAndExportBothHalves(defaultExportFormat, defaultBitrateKbps) },
+            onDismiss = { activeSheet = ActiveSheet.NONE },
+        )
+        ActiveSheet.INSERT_SILENCE -> InsertSilenceDialog(
+            onConfirm = { durMs -> viewModel.insertSilenceAtCursor(durMs) },
+            onDismiss = { activeSheet = ActiveSheet.NONE },
+        )
         ActiveSheet.NONE -> Unit
+    }
+
+    if (pendingMixOverlayName != null) {
+        MixOverlaySheet(
+            overlayDisplayName = pendingMixOverlayName,
+            timelineDurationMs = state.durationMs,
+            playheadMs = state.playheadMs,
+            selectionStartMs = state.selectionStartMs,
+            onConfirm = onConfirmMixOverlay,
+            onDismiss = onDismissMixOverlay,
+        )
     }
 }
 

@@ -3,6 +3,8 @@ package com.libreopus.app
 
 import com.libreopus.app.downloader.AudioFormatPreference
 import com.libreopus.app.downloader.CookieParser
+import com.libreopus.app.downloader.DownloadHistoryCodec
+import com.libreopus.app.downloader.DownloadHistoryEntry
 import com.libreopus.app.downloader.DumpJsonPreviewParser
 import com.libreopus.app.downloader.InfoJsonMetadataParser
 import com.libreopus.app.downloader.YtDlpErrorClassifier
@@ -186,5 +188,34 @@ class CookieAndMetadataParserTest {
         assertEquals(2, pl.playlistCount)
         assertEquals(300, pl.durationSec)
         assertEquals("First", pl.playlistEntries[0].title)
+    }
+
+    @Test
+    fun `downloadHistoryCodec roundTrips entries with escapes and enforces 30 entry limit`() {
+        val entries = (1..35).map { idx ->
+            DownloadHistoryEntry(
+                id = "id_$idx",
+                title = "Track #$idx \"Live\" \\ Mix",
+                sourceUrl = "https://example.com/watch?v=$idx",
+                savedPath = "Music/LibreOpus/track_$idx.opus",
+                contentUriString = "content://media/external/audio/media/$idx",
+                cacheFilePath = "/tmp/cache/track_$idx.opus",
+                mimeType = "audio/opus",
+                isVideo = idx % 2 == 0,
+                sizeBytes = 1024L * idx,
+                timestampMs = 1_700_000_000_000L + idx,
+            )
+        }
+        val encoded = DownloadHistoryCodec.encode(entries)
+        val decoded = DownloadHistoryCodec.decode(encoded)
+
+        assertEquals(DownloadHistoryCodec.MAX_ENTRIES, decoded.size)
+        assertEquals("Track #1 \"Live\" \\ Mix", decoded.first().title)
+        assertEquals("content://media/external/audio/media/1", decoded.first().contentUriString)
+        assertEquals("audio/opus", decoded.first().mimeType)
+        assertFalse(decoded.first().isVideo)
+        assertTrue(decoded[1].isVideo)
+        assertEquals(2048L, decoded[1].sizeBytes)
+        assertTrue(DownloadHistoryCodec.decode("{invalid").isEmpty())
     }
 }

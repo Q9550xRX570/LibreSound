@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_notif_channel_name">Medya İndirmeleri</string>
+    <string name="download_notif_channel_desc">Arka plan indirme ilerlemesi ve tamamlanma bildirimleri</string>
+    <string name="download_notif_running_title">Medya indiriliyor</string>
+    <string name="download_notif_preparing">yt-dlp hazırlanıyor…</string>
+    <string name="download_notif_complete_title">İndirme tamamlandı</string>
+    <string name="download_notif_failed_title">İndirme başarısız</string>
+    <string name="download_notif_cancel">İptal</string>
+</resources>

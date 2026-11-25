@@ -56,6 +56,7 @@ data class UserPreferences(
     val ytdlpExtraExtractorArgs: String = "",
     val ytdlpReferer: String = "",
     val ytdlpCommandTemplatesJson: String = "",
+    val ytdlpDownloadHistoryJson: String = "",
 )
 
 class PreferencesRepository(private val context: Context) {
@@ -87,6 +88,7 @@ class PreferencesRepository(private val context: Context) {
         val YTDLP_EXTRA_EXTRACTOR_ARGS = stringPreferencesKey("ytdlp_extra_extractor_args")
         val YTDLP_REFERER = stringPreferencesKey("ytdlp_referer")
         val YTDLP_COMMAND_TEMPLATES = stringPreferencesKey("ytdlp_command_templates_v1")
+        val YTDLP_DOWNLOAD_HISTORY = stringPreferencesKey("ytdlp_download_history_v1")
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
@@ -121,6 +123,7 @@ class PreferencesRepository(private val context: Context) {
             ytdlpExtraExtractorArgs = prefs[Keys.YTDLP_EXTRA_EXTRACTOR_ARGS].orEmpty(),
             ytdlpReferer = prefs[Keys.YTDLP_REFERER].orEmpty(),
             ytdlpCommandTemplatesJson = prefs[Keys.YTDLP_COMMAND_TEMPLATES].orEmpty(),
+            ytdlpDownloadHistoryJson = prefs[Keys.YTDLP_DOWNLOAD_HISTORY].orEmpty(),
         )
     }
 
@@ -214,6 +217,10 @@ class PreferencesRepository(private val context: Context) {
 
     suspend fun setYtdlpCommandTemplatesJson(json: String) {
         context.dataStore.edit { it[Keys.YTDLP_COMMAND_TEMPLATES] = json }
+    }
+
+    suspend fun setYtdlpDownloadHistoryJson(json: String) {
+        context.dataStore.edit { it[Keys.YTDLP_DOWNLOAD_HISTORY] = json }
     }
 
     suspend fun setYtdlpUpdateChannel(channelName: String) {

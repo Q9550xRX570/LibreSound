@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.libreopus.app.LibreOpusApplication
+import com.libreopus.app.R
 import com.libreopus.app.data.MediaStorageHelper
 import com.libreopus.app.data.PreferencesRepository
 import com.libreopus.app.data.RecentFileEntry
@@ -60,6 +61,7 @@ data class EditorUiState(
     val playheadMs: Long = 0L,
     val isPlaying: Boolean = false,
     val loopSelection: Boolean = false,
+    val playbackSpeed: Float = 1.0f,
     val peakMeter: Float = 0f,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
@@ -264,9 +266,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun seekTo(ms: Long) {
-        val dur = _state.value.durationMs
-        val clamped = ms.coerceIn(0L, dur)
-        player.seekPreview(clamped)
+        val st = _state.value
+        val clamped = ms.coerceIn(0L, st.durationMs)
+        if (st.isPlaying) {
+            player.seekWhilePlaying(clamped)
+        } else {
+            player.seekPreview(clamped)
+        }
         _state.update { it.copy(playheadMs = clamped) }
     }
 
@@ -284,6 +290,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun toggleLoop() {
         _state.update { it.copy(loopSelection = !it.loopSelection) }
+    }
+
+    fun setPlaybackSpeed(speed: Float) {
+        val clamped = speed.coerceIn(0.5f, 2.0f)
+        player.setPlaybackSpeed(clamped)
+        _state.update { it.copy(playbackSpeed = clamped) }
     }
 
     fun undo() {
@@ -353,6 +365,91 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     }) { tl, _, _ ->
         val at = tl.msToFrame(_state.value.playheadMs)
         tl.split(at).second
+    }
+
+    fun splitAndExportBothHalves(defaultFormat: ExportFormat, defaultBitrateKbps: Int) {
+        val currentSnap = history.current ?: return
+        val st = _state.value
+        val tl = st.timeline ?: return
+        val curMs = st.playheadMs
+        val at = tl.msToFrame(curMs)
+        if (at <= 0L || at >= tl.totalFrames) {
+            viewModelScope.launch {
+                _events.emit(EditorEvent.Message(app.getString(R.string.split_invalid_pos)))
+            }
+            return
+        }
+
+        player.pause()
+        val (leftTl, rightTl) = tl.split(at)
+        val leftLossless = currentSnap.losslessState.trimmed(0L, curMs)
+        val rightLossless = currentSnap.losslessState.trimmed(curMs, st.durationMs)
+
+        val effectiveFormat = if (st.isLosslessOpusReady &&
+            (defaultFormat == ExportFormat.OPUS || defaultFormat == ExportFormat.OGG_OPUS)
+        ) {
+            defaultFormat
+        } else if (st.isLosslessOpusReady) {
+            ExportFormat.OPUS
+        } else {
+            defaultFormat
+        }
+
+        val config = ExportConfig(
+            format = effectiveFormat,
+            bitrateKbps = defaultBitrateKbps,
+            metadata = st.metadata,
+            losslessStreamCopy = st.isLosslessOpusReady,
+        )
+
+        val baseName = (st.info?.displayName ?: "libreopus_audio").substringBeforeLast('.')
+        val ext = config.format.extension
+        val part1Name = "${baseName}_part1.$ext"
+        val part2Name = "${baseName}_part2.$ext"
+
+        activeTaskJob?.cancel()
+        activeTaskJob = viewModelScope.launch {
+            _state.update { it.copy(busyLabel = "Split", busyProgress = 0f) }
+            try {
+                val ctx = getApplication<Application>()
+                val leftState = st.copy(
+                    isLosslessOpusReady = leftLossless.isLosslessEligible,
+                    losslessSourceFile = leftLossless.sourceOggFile,
+                    losslessStartMs = leftLossless.startMs,
+                    losslessEndMs = leftLossless.endMs,
+                )
+                val rightState = st.copy(
+                    isLosslessOpusReady = rightLossless.isLosslessEligible,
+                    losslessSourceFile = rightLossless.sourceOggFile,
+                    losslessStartMs = rightLossless.startMs,
+                    losslessEndMs = rightLossless.endMs,
+                )
+
+                val (uri1, stream1) = MediaStorageHelper.createMusicExportTarget(ctx, part1Name, config.format)
+                stream1.buffered().use { out ->
+                    runExportPipeline(leftTl, leftState, config, out, progressScale = 0.5f, progressOffset = 0f)
+                }
+                MediaStorageHelper.finalizeMusicExportTarget(ctx, uri1)
+
+                val (uri2, stream2) = MediaStorageHelper.createMusicExportTarget(ctx, part2Name, config.format)
+                stream2.buffered().use { out ->
+                    runExportPipeline(rightTl, rightState, config, out, progressScale = 0.5f, progressOffset = 0.5f)
+                }
+                MediaStorageHelper.finalizeMusicExportTarget(ctx, uri2)
+
+                _state.update { it.copy(busyLabel = null, busyProgress = 0f) }
+                _events.emit(
+                    EditorEvent.Message(
+                        app.getString(R.string.split_exported_both, "$part1Name, $part2Name"),
+                    ),
+                )
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                _state.update { it.copy(busyLabel = null, busyProgress = 0f) }
+                _events.emit(EditorEvent.Message(t.localizedMessage ?: "Split export failed"))
+            }
+        }
     }
 
     fun silenceSelection() = runTimelineEdit("Silence", losslessTransform = { ls, _, _ -> ls.invalidated() }) { tl, s, e ->
@@ -667,6 +764,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         st: EditorUiState,
         config: ExportConfig,
         outputStream: java.io.OutputStream,
+        progressScale: Float = 1f,
+        progressOffset: Float = 0f,
     ) {
         val losslessFile = st.losslessSourceFile
         val canLossless = config.losslessStreamCopy &&
@@ -685,7 +784,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 ),
                 metadata = config.metadata,
                 outputStream = outputStream,
-            ) { p -> _state.update { it.copy(busyProgress = p) } }
+            ) { p -> _state.update { it.copy(busyProgress = (progressOffset + p * progressScale).coerceIn(0f, 1f)) } }
         } else {
             val store = pcmStore
             val lufsTarget = config.normalizeTargetLufs
@@ -696,13 +795,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     startFrame = 0L,
                     endFrame = timeline.totalFrames,
                     targetLufs = lufsTarget,
-                ) { p -> _state.update { it.copy(busyProgress = p * 0.35f) } }
+                ) { p -> _state.update { it.copy(busyProgress = (progressOffset + (p * 0.35f) * progressScale).coerceIn(0f, 1f)) } }
             } else {
                 timeline
             }
             val startProg = if (config.normalizeTargetLufs != null) 0.35f else 0f
             engine.exportTimeline(effectiveTimeline, config, outputStream) { p ->
-                _state.update { it.copy(busyProgress = startProg + p * (1f - startProg)) }
+                val scaled = progressOffset + (startProg + p * (1f - startProg)) * progressScale
+                _state.update { it.copy(busyProgress = scaled.coerceIn(0f, 1f)) }
             }
         }
     }

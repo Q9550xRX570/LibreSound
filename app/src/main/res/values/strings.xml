@@ -271,4 +271,31 @@
 
     <!-- Processing -->
     <string name="processing_applying">Processing: %1$s…</string>
+
+    <!-- Studio Transport & Dialogs -->
+    <string name="transport_speed">Speed: %1$s</string>
+    <string name="action_insert_silence">Insert Silence</string>
+    <string name="split_sheet_title">Split at Cursor (%1$s)</string>
+    <string name="split_keep_left">Keep Left Half</string>
+    <string name="split_keep_right">Keep Right Half</string>
+    <string name="split_export_both">Export Both Halves to Music</string>
+    <string name="split_exported_both">Saved both halves (%1$s)</string>
+    <string name="split_invalid_pos">Move cursor inside the track to split</string>
+    <string name="silence_insert_title">Insert Silence at Cursor</string>
+    <string name="silence_insert_duration">Duration: %1$.2f s</string>
+    <string name="mix_dialog_title">Mix / Overlay Audio</string>
+    <string name="mix_selected_file">Overlay track: %1$s</string>
+    <string name="mix_offset_label">Start offset: %1$s</string>
+    <string name="mix_offset_cursor">At Cursor</string>
+    <string name="mix_offset_selection">Selection Start</string>
+    <string name="mix_offset_start">Track Start</string>
+    <string name="mix_base_gain">Original track gain: %1$+.1f dB</string>
+    <string name="mix_overlay_gain">Overlay track gain: %1$+.1f dB</string>
+
+    <!-- Downloader History -->
+    <string name="download_history_title">Download History</string>
+    <string name="download_history_clear">Clear All</string>
+    <string name="download_history_refill">Reuse URL</string>
+    <string name="download_history_delete">Remove from history</string>
+    <string name="download_history_file_missing">Saved file is no longer accessible</string>
 </resources>

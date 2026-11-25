@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libreopus.app.data.AppLanguage
@@ -164,6 +165,7 @@ private fun LibreOpusAppContent(
     var currentTab by remember { mutableStateOf(TopTab.STUDIO) }
     var pendingCoverCallback by remember { mutableStateOf<((ByteArray, String) -> Unit)?>(null) }
     var pendingSaveAsConfig by remember { mutableStateOf<ExportConfig?>(null) }
+    var pendingMixTarget by remember { mutableStateOf<Pair<Uri, String>?>(null) }
 
     val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -185,7 +187,8 @@ private fun LibreOpusAppContent(
 
     val mixPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            editorVm.mixOverlayUri(uri, offsetMs = editorState.playheadMs, baseGainDb = 0f, overlayGainDb = -3f)
+            val name = MediaStorageHelper.buildAudioSource(context, uri).displayName
+            pendingMixTarget = uri to name
         }
     }
 
@@ -236,6 +239,7 @@ private fun LibreOpusAppContent(
     }
 
     val shareTitle = stringResource(R.string.export_share)
+    val missingFileMsg = stringResource(R.string.download_history_file_missing)
 
     LaunchedEffect(shareTitle) {
         editorVm.events.collect { event ->
@@ -270,6 +274,15 @@ private fun LibreOpusAppContent(
                 val base = (editorState.info?.displayName ?: "libreopus").substringBeforeLast('.')
                 saveAsLauncher.launch("${base}_edited.${cfg.format.extension}")
             },
+            pendingMixOverlayName = pendingMixTarget?.second,
+            onConfirmMixOverlay = { offsetMs, baseGainDb, overlayGainDb ->
+                val target = pendingMixTarget
+                pendingMixTarget = null
+                if (target != null) {
+                    editorVm.mixOverlayUri(target.first, offsetMs, baseGainDb, overlayGainDb)
+                }
+            },
+            onDismissMixOverlay = { pendingMixTarget = null },
         )
     } else {
         Scaffold(
@@ -347,6 +360,37 @@ private fun LibreOpusAppContent(
                     onShareFile = { file, mime ->
                         val shareIntent = MediaStorageHelper.createShareIntent(context, file, mime)
                         context.startActivity(Intent.createChooser(shareIntent, shareTitle))
+                    },
+                    onOpenHistoryUri = { uriStr ->
+                        val uri = uriStr.toUri()
+                        val readable = runCatching {
+                            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { } != null
+                        }.getOrDefault(false)
+                        if (readable) {
+                            currentTab = TopTab.EDITOR
+                            editorVm.openUri(uri)
+                        } else {
+                            scope.launch {
+                                snackbarHostState.showSnackbar(missingFileMsg)
+                            }
+                        }
+                    },
+                    onShareHistoryUri = { uriStr, mime ->
+                        val uri = uriStr.toUri()
+                        val readable = runCatching {
+                            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { } != null
+                        }.getOrDefault(false)
+                        if (readable) {
+                            val shareIntent = MediaStorageHelper.createShareUriIntent(context, uri, mime)
+                            context.startActivity(Intent.createChooser(shareIntent, shareTitle))
+                        } else {
+                            scope.launch {
+                                snackbarHostState.showSnackbar(missingFileMsg)
+                            }
+                        }
+                    },
+                    onShowMessage = { msg ->
+                        scope.launch { snackbarHostState.showSnackbar(msg) }
                     },
                     modifier = Modifier.padding(innerPadding),
                 )

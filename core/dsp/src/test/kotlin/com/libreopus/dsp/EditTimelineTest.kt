@@ -78,4 +78,34 @@ class EditTimelineTest {
         assertFalse(history.canUndo)
         assertTrue(history.canRedo)
     }
+
+    @Test
+    fun `insertSilence and lossless split ranges remain sample and timestamp accurate`() {
+        val store = DiskPcmStore(tempFolder.newFolder("split_silence"))
+        val file = store.createChunkFile("src")
+        val samples = ShortArray(480) { (it + 1).toShort() }
+        store.writePcm16Le(file, samples)
+
+        val base = EditTimeline.fromSingleFile(48000, 1, file, 480L)
+        val withGap = base.insertSilence(240L, 120L)
+        assertEquals(600L, withGap.totalFrames)
+        val out = ShortArray(600)
+        withGap.readFrames(0L, out, 0, 600)
+        assertEquals(240, out[239].toInt())
+        assertEquals(0, out[240].toInt())
+        assertEquals(0, out[359].toInt())
+        assertEquals(241, out[360].toInt())
+
+        val initialLossless = LosslessOpusState.initial(file, 10_000L, supportsLossless = true)
+        val trimmedFirst = initialLossless.trimmed(2_000L, 9_000L)
+        val leftSplit = trimmedFirst.trimmed(0L, 3_500L)
+        val rightSplit = trimmedFirst.trimmed(3_500L, 7_000L)
+
+        assertTrue(leftSplit.isLosslessEligible)
+        assertEquals(2_000L, leftSplit.startMs)
+        assertEquals(5_500L, leftSplit.endMs)
+        assertTrue(rightSplit.isLosslessEligible)
+        assertEquals(5_500L, rightSplit.startMs)
+        assertEquals(9_000L, rightSplit.endMs)
+    }
 }

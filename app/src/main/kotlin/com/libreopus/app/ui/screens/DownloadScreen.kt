@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.libreopus.app.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -20,10 +23,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.BookmarkAdd
@@ -42,7 +47,7 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Movie
-import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tune
@@ -86,10 +91,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.libreopus.app.R
 import com.libreopus.app.data.Formatters
 import com.libreopus.app.downloader.AudioFormatPreference
@@ -116,7 +123,11 @@ fun DownloadScreen(
     onUseAsCover: (imageFile: File, mimeType: String) -> Unit,
     onShareFile: (file: File, mimeType: String) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenHistoryUri: (uriString: String) -> Unit = {},
+    onShareHistoryUri: (uriString: String, mimeType: String) -> Unit = { _, _ -> },
+    onShowMessage: (String) -> Unit = {},
 ) {
+    val context = LocalContext.current
     @Suppress("DEPRECATION")
     val clipboard = LocalClipboardManager.current
     var showLogs by remember { mutableStateOf(false) }
@@ -125,6 +136,26 @@ fun DownloadScreen(
     var showFormatSheet by remember { mutableStateOf(false) }
     var showSaveTemplateDialog by remember { mutableStateOf(false) }
     var showErrorDetails by remember { mutableStateOf(false) }
+    var askedNotifPermission by remember { mutableStateOf(false) }
+
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { _ ->
+        askedNotifPermission = true
+        viewModel.startDownload()
+    }
+
+    val startDownloadWithPermissionCheck = {
+        val needsPrompt = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !askedNotifPermission &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        if (needsPrompt) {
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.startDownload()
+        }
+    }
 
     val execOptionsPreview = remember(
         state.audioPreference,
@@ -611,7 +642,7 @@ fun DownloadScreen(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     modifier = Modifier.weight(1f),
                                 ) {
-                                    Icon(Icons.Rounded.PlaylistPlay, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Text(stringResource(R.string.download_allow_playlist))
                                 }
                                 Switch(
@@ -803,7 +834,7 @@ fun DownloadScreen(
                 }
             } else {
                 Button(
-                    onClick = { viewModel.startDownload() },
+                    onClick = startDownloadWithPermissionCheck,
                     enabled = state.url.isNotBlank() && !state.isFetchingPreview,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -1029,6 +1060,109 @@ fun DownloadScreen(
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                             modifier = Modifier.padding(12.dp),
                         )
+                    }
+                }
+            }
+        }
+
+        // Persistent Download History
+        if (state.downloadHistory.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.download_history_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    TextButton(onClick = { viewModel.clearDownloadHistory() }) {
+                        Text(stringResource(R.string.download_history_clear))
+                    }
+                }
+            }
+            items(state.downloadHistory, key = { it.id }) { entry ->
+                val missingMsg = stringResource(R.string.download_history_file_missing)
+                val cachedFile = entry.cacheFilePath?.let { File(it) }?.takeIf { it.exists() && it.length() > 0L }
+                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = entry.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        val metaLine = buildList {
+                            if (entry.savedPath.isNotBlank()) add(entry.savedPath)
+                            if (entry.sizeBytes > 0L) add(Formatters.formatBytes(entry.sizeBytes))
+                        }.joinToString(" • ")
+                        if (metaLine.isNotBlank()) {
+                            Text(
+                                text = metaLine,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            if (!entry.mimeType.startsWith("image/")) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        when {
+                                            cachedFile != null -> onOpenInEditor(cachedFile, entry.title, null, null, null)
+                                            !entry.contentUriString.isNullOrBlank() -> onOpenHistoryUri(entry.contentUriString)
+                                            else -> onShowMessage(missingMsg)
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = if (entry.isVideo) {
+                                            stringResource(R.string.download_extract_to_editor)
+                                        } else {
+                                            stringResource(R.string.download_open_in_editor)
+                                        },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            } else {
+                                Spacer(Modifier.weight(1f))
+                            }
+                            IconButton(
+                                onClick = {
+                                    when {
+                                        cachedFile != null -> onShareFile(cachedFile, entry.mimeType)
+                                        !entry.contentUriString.isNullOrBlank() -> onShareHistoryUri(entry.contentUriString, entry.mimeType)
+                                        else -> onShowMessage(missingMsg)
+                                    }
+                                },
+                            ) {
+                                Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.export_share))
+                            }
+                            IconButton(
+                                onClick = { viewModel.setUrl(entry.sourceUrl) },
+                                enabled = entry.sourceUrl.isNotBlank(),
+                            ) {
+                                Icon(Icons.Rounded.Replay, contentDescription = stringResource(R.string.download_history_refill))
+                            }
+                            IconButton(
+                                onClick = { viewModel.deleteHistoryEntry(entry.id) },
+                            ) {
+                                Icon(Icons.Rounded.DeleteOutline, contentDescription = stringResource(R.string.download_history_delete))
+                            }
+                        }
                     }
                 }
             }

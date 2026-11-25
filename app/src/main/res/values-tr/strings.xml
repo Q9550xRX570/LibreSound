@@ -271,4 +271,31 @@
 
     <!-- Processing -->
     <string name="processing_applying">İşleniyor: %1$s…</string>
+
+    <!-- Studio Transport & Dialogs -->
+    <string name="transport_speed">Hız: %1$s</string>
+    <string name="action_insert_silence">Sessizlik Ekle</string>
+    <string name="split_sheet_title">İmleçten Böl (%1$s)</string>
+    <string name="split_keep_left">Sol Parçayı Tut</string>
+    <string name="split_keep_right">Sağ Parçayı Tut</string>
+    <string name="split_export_both">İki Parçayı da Music\'e Aktar</string>
+    <string name="split_exported_both">Her iki parça kaydedildi (%1$s)</string>
+    <string name="split_invalid_pos">Bölmek için imleci uçlardan içeri taşıyın</string>
+    <string name="silence_insert_title">İmlece Sessizlik Ekle</string>
+    <string name="silence_insert_duration">Süre: %1$.2f sn</string>
+    <string name="mix_dialog_title">Üst Üste Ses Miksle</string>
+    <string name="mix_selected_file">Eklenecek parça: %1$s</string>
+    <string name="mix_offset_label">Başlangıç konumu: %1$s</string>
+    <string name="mix_offset_cursor">İmleçte</string>
+    <string name="mix_offset_selection">Seçim Başında</string>
+    <string name="mix_offset_start">En Başta</string>
+    <string name="mix_base_gain">Mevcut parça kazancı: %1$+.1f dB</string>
+    <string name="mix_overlay_gain">Eklenecek ses kazancı: %1$+.1f dB</string>
+
+    <!-- Downloader History -->
+    <string name="download_history_title">İndirme Geçmişi</string>
+    <string name="download_history_clear">Tümünü Temizle</string>
+    <string name="download_history_refill">URL Kullan</string>
+    <string name="download_history_delete">Geçmişten kaldır</string>
+    <string name="download_history_file_missing">Kaydedilen dosyaya artık erişilemiyor</string>
 </resources>

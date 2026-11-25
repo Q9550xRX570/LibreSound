@@ -4,6 +4,7 @@ package com.libreopus.app.downloader
 import android.content.Context
 import com.libreopus.audio.api.AudioMetadata
 import java.io.File
+import kotlinx.coroutines.flow.StateFlow
 
 enum class DownloadPreset {
     BEST_AUDIO,
@@ -67,6 +68,19 @@ data class CommandTemplateEntry(
     val builtIn: Boolean = false,
 )
 
+private fun escapeJsonString(s: String): String = buildString(s.length) {
+    for (ch in s) {
+        when (ch) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            else -> append(ch)
+        }
+    }
+}
+
 object CommandTemplateCodec {
     val builtInTemplates: List<CommandTemplateEntry> = listOf(
         CommandTemplateEntry(
@@ -99,9 +113,9 @@ object CommandTemplateCodec {
         val sb = StringBuilder("[")
         templates.forEachIndexed { idx, t ->
             if (idx > 0) sb.append(',')
-            sb.append("{\"id\":\"").append(escapeJson(t.id))
-                .append("\",\"name\":\"").append(escapeJson(t.name))
-                .append("\",\"args\":\"").append(escapeJson(t.args)).append("\"}")
+            sb.append("{\"id\":\"").append(escapeJsonString(t.id))
+                .append("\",\"name\":\"").append(escapeJsonString(t.name))
+                .append("\",\"args\":\"").append(escapeJsonString(t.args)).append("\"}")
         }
         sb.append(']')
         return sb.toString()
@@ -118,18 +132,73 @@ object CommandTemplateCodec {
             CommandTemplateEntry(id = id, name = name, args = args, builtIn = false)
         }
     }
+}
 
-    private fun escapeJson(s: String): String = buildString(s.length) {
-        for (ch in s) {
-            when (ch) {
-                '\\' -> append("\\\\")
-                '"' -> append("\\\"")
-                '\n' -> append("\\n")
-                '\r' -> append("\\r")
-                '\t' -> append("\\t")
-                else -> append(ch)
-            }
+data class DownloadHistoryEntry(
+    val id: String,
+    val title: String,
+    val sourceUrl: String,
+    val savedPath: String,
+    val contentUriString: String? = null,
+    val cacheFilePath: String? = null,
+    val mimeType: String = "audio/*",
+    val isVideo: Boolean = false,
+    val sizeBytes: Long = 0L,
+    val timestampMs: Long = 0L,
+)
+
+object DownloadHistoryCodec {
+    const val MAX_ENTRIES = 30
+
+    fun encode(entries: List<DownloadHistoryEntry>): String {
+        val capped = entries.take(MAX_ENTRIES)
+        val sb = StringBuilder("[")
+        capped.forEachIndexed { idx, e ->
+            if (idx > 0) sb.append(',')
+            sb.append("{\"id\":\"").append(escapeJsonString(e.id))
+                .append("\",\"title\":\"").append(escapeJsonString(e.title))
+                .append("\",\"sourceUrl\":\"").append(escapeJsonString(e.sourceUrl))
+                .append("\",\"savedPath\":\"").append(escapeJsonString(e.savedPath))
+                .append("\",\"contentUri\":\"").append(escapeJsonString(e.contentUriString.orEmpty()))
+                .append("\",\"cacheFile\":\"").append(escapeJsonString(e.cacheFilePath.orEmpty()))
+                .append("\",\"mimeType\":\"").append(escapeJsonString(e.mimeType))
+                .append("\",\"isVideo\":").append(e.isVideo)
+                .append(",\"sizeBytes\":").append(e.sizeBytes)
+                .append(",\"timestampMs\":").append(e.timestampMs)
+                .append('}')
         }
+        sb.append(']')
+        return sb.toString()
+    }
+
+    fun decode(raw: String): List<DownloadHistoryEntry> {
+        if (raw.isBlank()) return emptyList()
+        val parsed = runCatching { SimpleJsonParser.parse(raw) as? List<*> }.getOrNull() ?: return emptyList()
+        return parsed.mapNotNull { row ->
+            val map = row as? Map<*, *> ?: return@mapNotNull null
+            val id = map["id"]?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val title = map["title"]?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val sourceUrl = map["sourceUrl"]?.toString().orEmpty()
+            val savedPath = map["savedPath"]?.toString().orEmpty()
+            val contentUri = map["contentUri"]?.toString()?.takeIf { it.isNotBlank() }
+            val cacheFile = map["cacheFile"]?.toString()?.takeIf { it.isNotBlank() }
+            val mimeType = map["mimeType"]?.toString()?.takeIf { it.isNotBlank() } ?: "audio/*"
+            val isVideo = map["isVideo"] as? Boolean ?: false
+            val sizeBytes = (map["sizeBytes"] as? Number)?.toLong() ?: 0L
+            val timestampMs = (map["timestampMs"] as? Number)?.toLong() ?: 0L
+            DownloadHistoryEntry(
+                id = id,
+                title = title,
+                sourceUrl = sourceUrl,
+                savedPath = savedPath,
+                contentUriString = contentUri,
+                cacheFilePath = cacheFile,
+                mimeType = mimeType,
+                isVideo = isVideo,
+                sizeBytes = sizeBytes,
+                timestampMs = timestampMs,
+            )
+        }.take(MAX_ENTRIES)
     }
 }
 
@@ -270,6 +339,45 @@ interface MediaDownloader {
     ): DownloadedArtifact
 
     fun cancel()
+}
+
+data class SavedMediaResult(
+    val item: DownloadedMediaItem,
+    val savedPath: String?,
+    val contentUriString: String? = null,
+)
+
+data class BackgroundDownloadState(
+    val isRunning: Boolean = false,
+    val activeTitle: String = "",
+    val progress: Float = 0f,
+    val etaSeconds: Long = -1L,
+    val logs: List<String> = emptyList(),
+    val result: DownloadedArtifact? = null,
+    val savedAudioPath: String? = null,
+    val savedImagePath: String? = null,
+    val savedMediaEntries: List<SavedMediaResult> = emptyList(),
+    val savedSubtitlePaths: List<String> = emptyList(),
+    val errorDiagnostic: YtDlpErrorDiagnostic? = null,
+    val engineStatus: YtDlpEngineStatus? = null,
+    val lastCompletedTimestampMs: Long = 0L,
+)
+
+interface DownloadExecutionCoordinator {
+    val state: StateFlow<BackgroundDownloadState>
+
+    fun startDownload(
+        context: Context,
+        url: String,
+        preset: DownloadPreset,
+        customArgs: String,
+        options: DownloadExecutionOptions,
+        notificationTitle: String,
+    )
+
+    fun cancelDownload()
+
+    fun clearOutcome()
 }
 
 data class YtDlpCommandPlan(

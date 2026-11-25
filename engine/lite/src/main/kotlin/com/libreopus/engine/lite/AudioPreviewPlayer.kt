@@ -36,6 +36,18 @@ class AudioPreviewPlayer {
     @Volatile
     private var playbackSpeed: Float = 1f
 
+    @Volatile
+    private var pendingSeekFrame: Long = -1L
+
+    @Volatile
+    private var activeStartFrame: Long = 0L
+
+    @Volatile
+    private var activeEndFrame: Long = 0L
+
+    @Volatile
+    private var activeSampleRate: Int = 48000
+
     fun setPlaybackSpeed(speed: Float) {
         playbackSpeed = speed.coerceIn(0.5f, 2.0f)
         runCatching {
@@ -86,6 +98,10 @@ class AudioPreviewPlayer {
             .build()
 
         audioTrack = track
+        activeSampleRate = sr
+        activeStartFrame = startFrame
+        activeEndFrame = endFrame
+        pendingSeekFrame = -1L
         _isPlaying.value = true
         _positionMs.value = startMs
 
@@ -101,6 +117,20 @@ class AudioPreviewPlayer {
                 var cursor = startFrame
 
                 while (isActive) {
+                    val reqSeek = pendingSeekFrame
+                    if (reqSeek >= 0L) {
+                        pendingSeekFrame = -1L
+                        cursor = reqSeek.coerceIn(startFrame, (endFrame - 1L).coerceAtLeast(startFrame))
+                        runCatching {
+                            track.pause()
+                            track.flush()
+                            track.play()
+                            if (abs(playbackSpeed - 1f) > 0.01f) {
+                                track.playbackParams = PlaybackParams().setSpeed(playbackSpeed)
+                            }
+                        }
+                    }
+
                     val remaining = endFrame - cursor
                     if (remaining <= 0L) {
                         if (loop) {
@@ -129,16 +159,24 @@ class AudioPreviewPlayer {
                     _positionMs.value = (cursor * 1000L) / sr
                 }
             } finally {
-                _isPlaying.value = false
-                _peakLevelNormalized.value = 0f
+                val isCurrent = audioTrack === track
+                if (isCurrent) {
+                    _isPlaying.value = false
+                    _peakLevelNormalized.value = 0f
+                    audioTrack = null
+                    activeStartFrame = 0L
+                    activeEndFrame = 0L
+                    pendingSeekFrame = -1L
+                }
                 runCatching {
                     track.pause()
                     track.flush()
                     track.stop()
                     track.release()
                 }
-                if (audioTrack === track) audioTrack = null
-                onComplete()
+                if (isCurrent) {
+                    onComplete()
+                }
             }
         }
     }
@@ -151,6 +189,19 @@ class AudioPreviewPlayer {
         _positionMs.value = positionMs.coerceAtLeast(0L)
     }
 
+    fun seekWhilePlaying(positionMs: Long) {
+        val sr = activeSampleRate
+        val eFrame = activeEndFrame
+        if (!_isPlaying.value || sr <= 0 || eFrame <= activeStartFrame) {
+            seekPreview(positionMs)
+            return
+        }
+        val target = ((positionMs.coerceAtLeast(0L) * sr) / 1000L)
+            .coerceIn(activeStartFrame, eFrame - 1L)
+        _positionMs.value = (target * 1000L) / sr
+        pendingSeekFrame = target
+    }
+
     fun release() {
         stopInternal()
     }
@@ -158,6 +209,9 @@ class AudioPreviewPlayer {
     private fun stopInternal() {
         playJob?.cancel()
         playJob = null
+        pendingSeekFrame = -1L
+        activeStartFrame = 0L
+        activeEndFrame = 0L
         _isPlaying.value = false
         _peakLevelNormalized.value = 0f
         audioTrack?.let { track ->

@@ -5,7 +5,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.libreopus.app.data.MediaStorageHelper
+import com.libreopus.app.R
 import com.libreopus.app.data.PreferencesRepository
 import com.libreopus.app.downloader.AudioFormatPreference
 import com.libreopus.app.downloader.CommandTemplateCodec
@@ -13,13 +13,16 @@ import com.libreopus.app.downloader.CommandTemplateEntry
 import com.libreopus.app.downloader.CookieFileStore
 import com.libreopus.app.downloader.CookieSummary
 import com.libreopus.app.downloader.DownloadExecutionOptions
+import com.libreopus.app.downloader.DownloadHistoryCodec
+import com.libreopus.app.downloader.DownloadHistoryEntry
 import com.libreopus.app.downloader.DownloadPreset
 import com.libreopus.app.downloader.DownloadedArtifact
-import com.libreopus.app.downloader.DownloadedMediaItem
 import com.libreopus.app.downloader.FilenameTemplate
 import com.libreopus.app.downloader.MediaTrackPreview
+import com.libreopus.app.downloader.PlatformDownloadCoordinator
 import com.libreopus.app.downloader.PlatformDownloader
 import com.libreopus.app.downloader.PresetCommandBuilder
+import com.libreopus.app.downloader.SavedMediaResult
 import com.libreopus.app.downloader.YoutubeClientMode
 import com.libreopus.app.downloader.YtDlpClassifiedException
 import com.libreopus.app.downloader.YtDlpEngineStatus
@@ -35,15 +38,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class SavedMediaEntry(
-    val item: DownloadedMediaItem,
-    val savedPath: String?,
-)
+typealias SavedMediaEntry = SavedMediaResult
 
 data class DownloadUiState(
     val url: String = "",
@@ -70,6 +72,7 @@ data class DownloadUiState(
     val proxyUrl: String = "",
     val userAgent: String = "",
     val commandTemplates: List<CommandTemplateEntry> = CommandTemplateCodec.builtInTemplates,
+    val downloadHistory: List<DownloadHistoryEntry> = emptyList(),
     val updateChannel: YtDlpUpdateChannel = YtDlpUpdateChannel.STABLE,
     val engineStatus: YtDlpEngineStatus = YtDlpEngineStatus(available = false, initialized = false),
     val isUpdatingEngine: Boolean = false,
@@ -115,10 +118,9 @@ data class DownloadUiState(
 
 class DownloadViewModel(application: Application) : AndroidViewModel(application) {
     private val downloader = PlatformDownloader.create()
+    private val coordinator = PlatformDownloadCoordinator.get(application)
     private val prefsRepo = PreferencesRepository(application)
-    private var downloadJob: Job? = null
     private var previewJob: Job? = null
-    private var activeWorkDir: File? = null
 
     private val _state = MutableStateFlow(DownloadUiState())
     val state: StateFlow<DownloadUiState> = _state.asStateFlow()
@@ -133,6 +135,9 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 
             val savedTemplates = prefs?.ytdlpCommandTemplatesJson
                 ?.let { CommandTemplateCodec.decode(it) }
+                .orEmpty()
+            val initialHistory = prefs?.ytdlpDownloadHistoryJson
+                ?.let { DownloadHistoryCodec.decode(it) }
                 .orEmpty()
 
             _state.update { st ->
@@ -164,16 +169,50 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                     }.getOrDefault(st.updateChannel),
                     customArgs = prefs?.ytdlpCustomArgs ?: st.customArgs,
                     commandTemplates = CommandTemplateCodec.builtInTemplates + savedTemplates,
+                    downloadHistory = initialHistory,
                     cookieSummary = cookies,
                     engineStatus = engineStatus,
                 )
             }
         }
+
+        viewModelScope.launch {
+            prefsRepo.preferences
+                .map { it.ytdlpDownloadHistoryJson }
+                .distinctUntilChanged()
+                .collect { raw ->
+                    val decoded = DownloadHistoryCodec.decode(raw)
+                    _state.update { it.copy(downloadHistory = decoded) }
+                }
+        }
+
+        viewModelScope.launch {
+            coordinator.state.collect { bg ->
+                _state.update { st ->
+                    st.copy(
+                        isRunning = bg.isRunning,
+                        progress = bg.progress,
+                        etaSeconds = bg.etaSeconds,
+                        logs = bg.logs,
+                        result = bg.result,
+                        savedAudioPath = bg.savedAudioPath,
+                        savedImagePath = bg.savedImagePath,
+                        savedMediaEntries = bg.savedMediaEntries,
+                        savedSubtitlePaths = bg.savedSubtitlePaths,
+                        errorDiagnostic = bg.errorDiagnostic,
+                        engineStatus = bg.engineStatus ?: st.engineStatus,
+                    )
+                }
+            }
+        }
     }
 
     fun setUrl(url: String) {
+        val urlChanged = url.trim() != _state.value.url.trim()
+        if (urlChanged && !_state.value.isRunning) {
+            coordinator.clearOutcome()
+        }
         _state.update { st ->
-            val urlChanged = url.trim() != st.url.trim()
             st.copy(
                 url = url,
                 errorDiagnostic = null,
@@ -493,121 +532,47 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
 
         previewJob?.cancel()
         val ctx = getApplication<Application>()
-        val dir = File(ctx.cacheDir, "ytdlp/${System.currentTimeMillis()}").apply { mkdirs() }
-        activeWorkDir?.deleteRecursively()
-        activeWorkDir = dir
+        val notifTitle = current.preview?.title.orEmpty()
 
-        downloadJob?.cancel()
-        downloadJob = viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    isRunning = true,
-                    isFetchingPreview = false,
-                    progress = 0f,
-                    etaSeconds = -1L,
-                    logs = emptyList(),
-                    result = null,
-                    savedAudioPath = null,
-                    savedImagePath = null,
-                    savedMediaEntries = emptyList(),
-                    savedSubtitlePaths = emptyList(),
-                    errorDiagnostic = null,
-                )
+        viewModelScope.launch {
+            _state.update { it.copy(isFetchingPreview = false, errorDiagnostic = null) }
+            val cookieFile = withContext(Dispatchers.IO) {
+                if (current.useCookies) CookieFileStore.getCookieFileIfPresent(ctx) else null
             }
-            try {
-                val cookieFile = withContext(Dispatchers.IO) {
-                    if (current.useCookies) CookieFileStore.getCookieFileIfPresent(ctx) else null
-                }
-                val execOpts = current.toExecutionOptions(cookieFile)
-                val artifact = downloader.execute(
-                    context = ctx,
-                    url = trimmedUrl,
-                    preset = current.preset,
-                    customArgs = current.customArgs,
-                    workDir = dir,
-                    options = execOpts,
-                ) { pct, eta, line ->
-                    _state.update { st ->
-                        val nextLogs = if (line.isNotBlank()) (st.logs + line).takeLast(80) else st.logs
-                        st.copy(
-                            progress = (pct / 100f).coerceIn(0f, 1f),
-                            etaSeconds = eta,
-                            logs = nextLogs,
-                        )
-                    }
-                }
+            val execOpts = current.toExecutionOptions(cookieFile)
+            coordinator.startDownload(
+                context = ctx,
+                url = trimmedUrl,
+                preset = current.preset,
+                customArgs = current.customArgs,
+                options = execOpts,
+                notificationTitle = notifTitle,
+            )
+        }
+    }
 
-                val savedEntries = withContext(Dispatchers.IO) {
-                    artifact.mediaItems.map { media ->
-                        val path = MediaStorageHelper.saveDownloadedMediaToStorage(
-                            context = ctx,
-                            fileName = media.displayName,
-                            mimeType = media.mimeType,
-                            sourceFile = media.file,
-                            isVideo = media.isVideo,
-                        )
-                        SavedMediaEntry(item = media, savedPath = path)
-                    }
-                }
+    fun deleteHistoryEntry(id: String) {
+        val updated = _state.value.downloadHistory.filterNot { it.id == id }
+        _state.update { it.copy(downloadHistory = updated) }
+        viewModelScope.launch {
+            prefsRepo.setYtdlpDownloadHistoryJson(DownloadHistoryCodec.encode(updated))
+        }
+    }
 
-                val savedImage = artifact.imageFile?.let { img ->
-                    val mime = artifact.imageMimeType ?: "image/jpeg"
-                    withContext(Dispatchers.IO) {
-                        MediaStorageHelper.saveImageToPictures(ctx, img.name, mime, img)
-                    }
-                }
-
-                val savedSubs = withContext(Dispatchers.IO) {
-                    artifact.subtitleFiles.mapNotNull { sub ->
-                        MediaStorageHelper.saveFileToDownloads(ctx, sub.name, "text/plain", sub)
-                    }
-                }
-
-                val status = runCatching { downloader.getEngineStatus(ctx) }.getOrNull()
-
-                _state.update {
-                    it.copy(
-                        isRunning = false,
-                        progress = 1f,
-                        result = artifact,
-                        savedAudioPath = savedEntries.firstOrNull()?.savedPath,
-                        savedImagePath = savedImage,
-                        savedMediaEntries = savedEntries,
-                        savedSubtitlePaths = savedSubs,
-                        engineStatus = status ?: it.engineStatus,
-                    )
-                }
-            } catch (ce: CancellationException) {
-                _state.update { it.copy(isRunning = false) }
-                throw ce
-            } catch (t: Throwable) {
-                val diag = (t as? YtDlpClassifiedException)?.diagnostic
-                    ?: YtDlpErrorClassifier.classify(t.localizedMessage ?: "Download failed")
-                _state.update { st ->
-                    val nextLogs = if (diag.rawDetails.isNotBlank()) {
-                        (st.logs + diag.rawDetails.lines().filter { it.isNotBlank() }).takeLast(80)
-                    } else {
-                        st.logs
-                    }
-                    st.copy(
-                        isRunning = false,
-                        logs = nextLogs,
-                        errorDiagnostic = diag,
-                    )
-                }
-            }
+    fun clearDownloadHistory() {
+        _state.update { it.copy(downloadHistory = emptyList()) }
+        viewModelScope.launch {
+            prefsRepo.setYtdlpDownloadHistoryJson("")
         }
     }
 
     fun cancelDownload() {
-        downloader.cancel()
+        coordinator.cancelDownload()
         previewJob?.cancel()
-        downloadJob?.cancel()
         _state.update { it.copy(isRunning = false, isFetchingPreview = false) }
     }
 
     override fun onCleared() {
-        downloader.cancel()
-        activeWorkDir?.deleteRecursively()
+        previewJob?.cancel()
     }
 }
