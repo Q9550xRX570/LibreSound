@@ -171,4 +171,49 @@ class DownloaderPresetTest {
         val diagBot = YtDlpErrorClassifier.classify("ERROR: Sign in to confirm you're not a bot")
         assertEquals(YtDlpErrorKind.BOT_CHECK_NEEDS_COOKIES, diagBot.kind)
     }
+
+    @Test
+    fun `search query detection, filename sanitization, and title override work cleanly`() {
+        assertTrue(PresetCommandBuilder.isDirectUrl("https://youtube.com/watch?v=dQw4w9WgXcQ"))
+        assertFalse(PresetCommandBuilder.isSearchQuery("https://youtube.com/watch?v=dQw4w9WgXcQ"))
+
+        assertTrue(PresetCommandBuilder.isSearchQuery("sezen aksu gulumse"))
+        assertEquals("ytsearch8:sezen aksu gulumse", PresetCommandBuilder.resolvePreviewTarget("sezen aksu gulumse"))
+        assertEquals("ytsearch5:piano", PresetCommandBuilder.resolvePreviewTarget("ytsearch5:piano"))
+        assertEquals("https://youtu.be/abc", PresetCommandBuilder.resolvePreviewTarget("https://youtu.be/abc"))
+
+        val cleanName = PresetCommandBuilder.sanitizeFilenameBase("  Artist / Track: <100%> ?*  ")
+        assertEquals("Artist Track 100%", cleanName)
+
+        val templ = PresetCommandBuilder.resolveOutputTemplate(
+            File("/tmp/work"),
+            DownloadExecutionOptions(titleOverride = "My 100% Mix / V2"),
+        )
+        assertEquals("/tmp/work/My 100%% Mix V2.%(ext)s", templ)
+
+        val playlistTempl = PresetCommandBuilder.resolveOutputTemplate(
+            File("/tmp/work"),
+            DownloadExecutionOptions(allowPlaylist = true, titleOverride = "ShouldBeIgnored"),
+        )
+        assertFalse(playlistTempl.contains("ShouldBeIgnored"))
+    }
+
+    @Test
+    fun `export target specs map Music, Ringtones, Notifications, and Alarms accurately`() {
+        val music = com.libreopus.app.data.MediaStorageHelper.buildExportTargetSpec(com.libreopus.app.data.ExportTargetType.MUSIC)
+        assertTrue(music.isMusic && !music.isRingtone && !music.isNotification && !music.isAlarm)
+        assertEquals("Music/LibreOpus", music.displayDir)
+
+        val ringtone = com.libreopus.app.data.MediaStorageHelper.buildExportTargetSpec(com.libreopus.app.data.ExportTargetType.RINGTONE)
+        assertTrue(!ringtone.isMusic && ringtone.isRingtone && !ringtone.isNotification && !ringtone.isAlarm)
+        assertEquals("Ringtones/LibreOpus", ringtone.displayDir)
+
+        val notif = com.libreopus.app.data.MediaStorageHelper.buildExportTargetSpec(com.libreopus.app.data.ExportTargetType.NOTIFICATION)
+        assertTrue(!notif.isMusic && notif.isNotification && !notif.isRingtone && !notif.isAlarm)
+        assertEquals("Notifications/LibreOpus", notif.displayDir)
+
+        val alarm = com.libreopus.app.data.MediaStorageHelper.buildExportTargetSpec(com.libreopus.app.data.ExportTargetType.ALARM)
+        assertTrue(!alarm.isMusic && alarm.isAlarm && !alarm.isRingtone && !alarm.isNotification)
+        assertEquals("Alarms/LibreOpus", alarm.displayDir)
+    }
 }

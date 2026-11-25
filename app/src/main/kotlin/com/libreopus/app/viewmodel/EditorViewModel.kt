@@ -7,24 +7,30 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.libreopus.app.LibreOpusApplication
 import com.libreopus.app.R
+import com.libreopus.app.data.ExportTargetType
 import com.libreopus.app.data.MediaStorageHelper
 import com.libreopus.app.data.PreferencesRepository
 import com.libreopus.app.data.RecentFileEntry
+import com.libreopus.app.data.RingtoneAssignOutcome
 import com.libreopus.audio.api.AudioInfo
 import com.libreopus.audio.api.AudioMetadata
 import com.libreopus.audio.api.ChannelMode
 import com.libreopus.audio.api.ExportConfig
 import com.libreopus.audio.api.ExportFormat
 import com.libreopus.audio.api.LosslessOpusTrimPlan
+import com.libreopus.audio.api.MediaChapter
 import com.libreopus.audio.api.WaveformPyramid
 import com.libreopus.audio.api.WavBitDepth
 import com.libreopus.dsp.effects.ChannelOperation
+import com.libreopus.dsp.effects.CompressorProcessor
 import com.libreopus.dsp.effects.FadeCurve
 import com.libreopus.dsp.effects.FadeProcessor
 import com.libreopus.dsp.effects.FilterAndGateProcessor
 import com.libreopus.dsp.effects.GainAndNormalizeProcessor
 import com.libreopus.dsp.effects.EqualizerProcessor
 import com.libreopus.dsp.effects.LiveDspConfig
+import com.libreopus.dsp.effects.ReverbEchoProcessor
+import com.libreopus.dsp.effects.StereoWidenerProcessor
 import com.libreopus.dsp.effects.TimePitchProcessor
 import com.libreopus.dsp.effects.UtilityProcessors
 import com.libreopus.dsp.storage.AudioSegment
@@ -57,6 +63,7 @@ data class EditorUiState(
     val timeline: EditTimeline? = null,
     val waveform: WaveformPyramid? = null,
     val durationMs: Long = 0L,
+    val chapters: List<MediaChapter> = emptyList(),
     val selectionStartMs: Long = 0L,
     val selectionEndMs: Long = 0L,
     val playheadMs: Long = 0L,
@@ -79,9 +86,25 @@ data class EditorUiState(
 
 enum class TrimMarkerTarget { START, CURSOR, END }
 
+private data class PendingRingtoneAssign(
+    val uri: Uri,
+    val targetType: ExportTargetType,
+    val displayTitle: String,
+    val savedDisplayPath: String,
+)
+
 sealed class EditorEvent {
     data class Message(val text: String) : EditorEvent()
     data class ShareReady(val file: File, val mimeType: String) : EditorEvent()
+    data class RequestWriteSettingsPermission(
+        val targetType: ExportTargetType,
+        val savedDisplayPath: String,
+    ) : EditorEvent()
+    data class OpenRingtonePickerFallback(
+        val uri: Uri,
+        val targetType: ExportTargetType,
+        val title: String,
+    ) : EditorEvent()
 }
 
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
@@ -95,6 +118,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var pcmStore: DiskPcmStore? = null
     private var clipboard: List<AudioSegment> = emptyList()
     private var activeTaskJob: Job? = null
+    private var pendingRingtoneAssign: PendingRingtoneAssign? = null
 
     private val _state = MutableStateFlow(EditorUiState())
     val state: StateFlow<EditorUiState> = _state.asStateFlow()
@@ -120,11 +144,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun openUri(uri: Uri) {
+    fun openUri(uri: Uri, chapters: List<MediaChapter> = emptyList()) {
         val ctx = getApplication<Application>()
         MediaStorageHelper.tryTakePersistablePermission(ctx, uri)
         val source = MediaStorageHelper.buildAudioSource(ctx, uri)
-        openSourceInternal(source, recentUriString = uri.toString(), overrideCoverBytes = null, overrideCoverMime = null)
+        openSourceInternal(
+            source = source,
+            recentUriString = uri.toString(),
+            overrideCoverBytes = null,
+            overrideCoverMime = null,
+            chapters = chapters,
+        )
     }
 
     fun openLocalFile(
@@ -133,6 +163,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         coverBytes: ByteArray? = null,
         coverMime: String? = null,
         overrideMetadata: AudioMetadata? = null,
+        chapters: List<MediaChapter> = emptyList(),
     ) {
         val source = object : com.libreopus.audio.api.AudioSource {
             override val displayName: String = displayName
@@ -147,6 +178,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             overrideCoverBytes = coverBytes,
             overrideCoverMime = coverMime,
             overrideMetadata = overrideMetadata,
+            chapters = chapters,
         )
     }
 
@@ -161,8 +193,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         overrideCoverBytes: ByteArray?,
         overrideCoverMime: String?,
         overrideMetadata: AudioMetadata? = null,
+        chapters: List<MediaChapter> = emptyList(),
     ) {
         player.pause()
+        pendingRingtoneAssign = null
         activeTaskJob?.cancel()
         activeTaskJob = viewModelScope.launch {
             val ctx = getApplication<Application>()
@@ -228,6 +262,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
 
+                val filteredChapters = chapters.filter { it.startMs < timeline.durationMs && it.endMs > it.startMs }
                 _state.value = EditorUiState(
                     hasSession = true,
                     info = decoded.info,
@@ -235,6 +270,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     timeline = timeline,
                     waveform = decoded.waveform,
                     durationMs = timeline.durationMs,
+                    chapters = filteredChapters,
                     selectionStartMs = 0L,
                     selectionEndMs = timeline.durationMs,
                     playheadMs = 0L,
@@ -267,6 +303,15 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun selectAll() {
         val dur = _state.value.durationMs
         _state.update { it.copy(selectionStartMs = 0L, selectionEndMs = dur) }
+    }
+
+    fun selectChapter(chapter: MediaChapter) {
+        val dur = _state.value.durationMs
+        if (dur <= 0L) return
+        val s = chapter.startMs.coerceIn(0L, dur)
+        val e = chapter.endMs.coerceIn(s, dur).let { if (it <= s) dur else it }
+        updateSelection(s, e)
+        seekTo(s)
     }
 
     fun seekTo(ms: Long) {
@@ -380,14 +425,22 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             } else {
                 _state.value.waveform
             }
+            val prevDurationMs = _state.value.durationMs
+            val nextDurationMs = snap.timeline.durationMs
             _state.update {
+                val keptChapters = if (kotlin.math.abs(nextDurationMs - prevDurationMs) <= 250L) {
+                    it.chapters
+                } else {
+                    emptyList()
+                }
                 it.copy(
                     timeline = snap.timeline,
                     metadata = snap.metadata,
                     waveform = wf,
-                    durationMs = snap.timeline.durationMs,
+                    durationMs = nextDurationMs,
+                    chapters = keptChapters,
                     selectionStartMs = 0L,
-                    selectionEndMs = snap.timeline.durationMs,
+                    selectionEndMs = nextDurationMs,
                     playheadMs = 0L,
                     canUndo = history.canUndo,
                     canRedo = history.canRedo,
@@ -613,6 +666,32 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         UtilityProcessors.reverse(tl, store, s, e, prog)
     }
 
+    fun applyCompressor(
+        thresholdDb: Float,
+        ratio: Float,
+        attackMs: Float,
+        releaseMs: Float,
+        makeupDb: Float,
+    ) = runDspEffect("Compressor") { tl, store, s, e, prog ->
+        CompressorProcessor.apply(tl, store, s, e, thresholdDb, ratio, attackMs, releaseMs, makeupDb, prog)
+    }
+
+    fun applyReverb(
+        delayMs: Float,
+        feedback: Float,
+        roomDamping: Float,
+        wetMix: Float,
+    ) = runDspEffect("Reverb / Echo") { tl, store, s, e, prog ->
+        ReverbEchoProcessor.apply(tl, store, s, e, delayMs, feedback, roomDamping, wetMix, prog)
+    }
+
+    fun applyStereoAndBass(
+        width: Float,
+        bassBoostDb: Float,
+    ) = runDspEffect("Stereo & Bass") { tl, store, s, e, prog ->
+        StereoWidenerProcessor.apply(tl, store, s, e, width, bassBoostDb, prog)
+    }
+
     fun applyChannelOperation(op: ChannelOperation) = runDspEffect("Channels") { tl, store, _, _, prog ->
         UtilityProcessors.applyChannelOperation(tl, store, op, prog)
     }
@@ -761,11 +840,51 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun exportToMusic(config: ExportConfig, shareAfter: Boolean = false) {
+    fun completePendingRingtoneAssignIfReady() {
+        val pending = pendingRingtoneAssign ?: return
+        pendingRingtoneAssign = null
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            when (MediaStorageHelper.assignDefaultRingtone(ctx, pending.uri, pending.targetType)) {
+                RingtoneAssignOutcome.ASSIGNED -> {
+                    _events.emit(
+                        EditorEvent.Message(
+                            ctx.getString(R.string.export_ringtone_assigned, pending.savedDisplayPath),
+                        ),
+                    )
+                }
+                RingtoneAssignOutcome.FALLBACK_TO_PICKER -> {
+                    _events.emit(
+                        EditorEvent.OpenRingtonePickerFallback(
+                            uri = pending.uri,
+                            targetType = pending.targetType,
+                            title = pending.displayTitle,
+                        ),
+                    )
+                }
+                RingtoneAssignOutcome.NEEDS_PERMISSION,
+                RingtoneAssignOutcome.FAILED -> {
+                    _events.emit(EditorEvent.Message(pending.savedDisplayPath))
+                }
+            }
+        }
+    }
+
+    fun exportToMusic(
+        config: ExportConfig,
+        shareAfter: Boolean = false,
+        targetType: ExportTargetType = ExportTargetType.MUSIC,
+        assignAsDefault: Boolean = false,
+        selectionOnly: Boolean = false,
+    ) {
         val st = _state.value
         val tl = st.timeline ?: return
         val baseName = (st.info?.displayName ?: "libreopus_audio").substringBeforeLast('.')
-        val outName = "${baseName}_edited.${config.format.extension}"
+        val suffix = if (selectionOnly && (st.selectionStartMs > 10L || st.selectionEndMs < st.durationMs - 10L)) "_clip" else "_edited"
+        val outName = "${baseName}${suffix}.${config.format.extension}"
+        val cleanTitle = config.metadata.title.trim().ifBlank { baseName }
+
+        val (exportTl, exportSt) = resolveExportSlice(tl, st, selectionOnly)
 
         activeTaskJob?.cancel()
         activeTaskJob = viewModelScope.launch {
@@ -776,18 +895,48 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     val shareDir = File(ctx.cacheDir, "exports").apply { mkdirs() }
                     val outFile = File(shareDir, outName)
                     FileOutputStream(outFile).buffered().use { out ->
-                        runExportPipeline(tl, st, config, out)
+                        runExportPipeline(exportTl, exportSt, config, out)
                     }
                     _state.update { it.copy(busyLabel = null, busyProgress = 0f) }
                     _events.emit(EditorEvent.ShareReady(outFile, config.format.mimeType))
                 } else {
-                    val (uri, stream) = MediaStorageHelper.createMusicExportTarget(ctx, outName, config.format)
+                    val (uri, stream) = MediaStorageHelper.createAudioExportTarget(
+                        context = ctx,
+                        fileName = outName,
+                        format = config.format,
+                        targetType = targetType,
+                        title = cleanTitle,
+                    )
                     stream.buffered().use { out ->
-                        runExportPipeline(tl, st, config, out)
+                        runExportPipeline(exportTl, exportSt, config, out)
                     }
                     MediaStorageHelper.finalizeMusicExportTarget(ctx, uri)
                     _state.update { it.copy(busyLabel = null, busyProgress = 0f) }
-                    _events.emit(EditorEvent.Message("Music/LibreOpus/$outName"))
+                    val savedPath = "${targetType.displayDir}/$outName"
+                    if (targetType != ExportTargetType.MUSIC && assignAsDefault) {
+                        when (MediaStorageHelper.assignDefaultRingtone(ctx, uri, targetType)) {
+                            RingtoneAssignOutcome.ASSIGNED -> {
+                                _events.emit(EditorEvent.Message(ctx.getString(R.string.export_ringtone_assigned, savedPath)))
+                            }
+                            RingtoneAssignOutcome.NEEDS_PERMISSION -> {
+                                pendingRingtoneAssign = PendingRingtoneAssign(
+                                    uri = uri,
+                                    targetType = targetType,
+                                    displayTitle = cleanTitle,
+                                    savedDisplayPath = savedPath,
+                                )
+                                _events.emit(EditorEvent.RequestWriteSettingsPermission(targetType, savedPath))
+                            }
+                            RingtoneAssignOutcome.FALLBACK_TO_PICKER -> {
+                                _events.emit(EditorEvent.OpenRingtonePickerFallback(uri, targetType, cleanTitle))
+                            }
+                            RingtoneAssignOutcome.FAILED -> {
+                                _events.emit(EditorEvent.Message(savedPath))
+                            }
+                        }
+                    } else {
+                        _events.emit(EditorEvent.Message(savedPath))
+                    }
                 }
             } catch (ce: CancellationException) {
                 throw ce
@@ -798,9 +947,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun exportToSafUri(uri: Uri, config: ExportConfig) {
+    fun exportToSafUri(uri: Uri, config: ExportConfig, selectionOnly: Boolean = false) {
         val st = _state.value
         val tl = st.timeline ?: return
+        val (exportTl, exportSt) = resolveExportSlice(tl, st, selectionOnly)
         activeTaskJob?.cancel()
         activeTaskJob = viewModelScope.launch {
             _state.update { it.copy(busyLabel = "Export", busyProgress = 0f) }
@@ -809,7 +959,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 val stream = ctx.contentResolver.openOutputStream(uri)
                     ?: throw IllegalStateException("Cannot open target document")
                 stream.buffered().use { out ->
-                    runExportPipeline(tl, st, config, out)
+                    runExportPipeline(exportTl, exportSt, config, out)
                 }
                 _state.update { it.copy(busyLabel = null, busyProgress = 0f) }
                 _events.emit(EditorEvent.Message(uri.lastPathSegment ?: "Saved"))
@@ -820,6 +970,24 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 _events.emit(EditorEvent.Message(t.localizedMessage ?: "Export failed"))
             }
         }
+    }
+
+    private fun resolveExportSlice(
+        tl: EditTimeline,
+        st: EditorUiState,
+        selectionOnly: Boolean,
+    ): Pair<EditTimeline, EditorUiState> {
+        if (!selectionOnly || st.durationMs <= 0L) return tl to st
+        val isSubRange = st.selectionEndMs > st.selectionStartMs &&
+            (st.selectionStartMs > 10L || st.selectionEndMs < st.durationMs - 10L)
+        if (!isSubRange) return tl to st
+        val sFrame = tl.msToFrame(st.selectionStartMs)
+        val eFrame = tl.msToFrame(st.selectionEndMs)
+        if (eFrame <= sFrame) return tl to st
+        val slicedTl = tl.trim(sFrame, eFrame)
+        val newStartMs = st.losslessStartMs + st.selectionStartMs
+        val newEndMs = (st.losslessStartMs + st.selectionEndMs).coerceAtMost(st.losslessEndMs)
+        return slicedTl to st.copy(losslessStartMs = newStartMs, losslessEndMs = newEndMs)
     }
 
     private suspend fun runExportPipeline(

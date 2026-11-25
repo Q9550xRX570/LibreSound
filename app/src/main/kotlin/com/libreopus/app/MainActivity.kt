@@ -164,8 +164,14 @@ private fun LibreOpusAppContent(
 
     var currentTab by remember { mutableStateOf(TopTab.STUDIO) }
     var pendingCoverCallback by remember { mutableStateOf<((ByteArray, String) -> Unit)?>(null) }
-    var pendingSaveAsConfig by remember { mutableStateOf<ExportConfig?>(null) }
+    var pendingSaveAsConfig by remember { mutableStateOf<Pair<ExportConfig, Boolean>?>(null) }
     var pendingMixTarget by remember { mutableStateOf<Pair<Uri, String>?>(null) }
+
+    val writeSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) {
+        editorVm.completePendingRingtoneAssignIfReady()
+    }
 
     val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -215,10 +221,10 @@ private fun LibreOpusAppContent(
     val saveAsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("*/*"),
     ) { uri ->
-        val cfg = pendingSaveAsConfig
+        val req = pendingSaveAsConfig
         pendingSaveAsConfig = null
-        if (uri != null && cfg != null) {
-            editorVm.exportToSafUri(uri, cfg)
+        if (uri != null && req != null) {
+            editorVm.exportToSafUri(uri, req.first, req.second)
         }
     }
 
@@ -240,8 +246,9 @@ private fun LibreOpusAppContent(
 
     val shareTitle = stringResource(R.string.export_share)
     val missingFileMsg = stringResource(R.string.download_history_file_missing)
+    val grantWritePermMsg = stringResource(R.string.export_ringtone_grant_perm)
 
-    LaunchedEffect(shareTitle) {
+    LaunchedEffect(shareTitle, grantWritePermMsg) {
         editorVm.events.collect { event ->
             when (event) {
                 is EditorEvent.Message -> {
@@ -250,6 +257,29 @@ private fun LibreOpusAppContent(
                 is EditorEvent.ShareReady -> {
                     val shareIntent = MediaStorageHelper.createShareIntent(context, event.file, event.mimeType)
                     context.startActivity(Intent.createChooser(shareIntent, shareTitle))
+                }
+                is EditorEvent.RequestWriteSettingsPermission -> {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("${event.savedDisplayPath} • $grantWritePermMsg")
+                    }
+                    runCatching {
+                        writeSettingsLauncher.launch(MediaStorageHelper.buildManageWriteSettingsIntent(context))
+                    }.onFailure {
+                        runCatching { context.startActivity(MediaStorageHelper.buildSoundSettingsIntent()) }
+                    }
+                }
+                is EditorEvent.OpenRingtonePickerFallback -> {
+                    runCatching {
+                        context.startActivity(
+                            MediaStorageHelper.buildRingtonePickerIntent(
+                                targetType = event.targetType,
+                                title = event.title,
+                                existingUri = event.uri,
+                            ),
+                        )
+                    }.onFailure {
+                        runCatching { context.startActivity(MediaStorageHelper.buildSoundSettingsIntent()) }
+                    }
                 }
             }
         }
@@ -269,10 +299,11 @@ private fun LibreOpusAppContent(
                 pendingCoverCallback = cb
                 coverPicker.launch("image/*")
             },
-            onExportSaveAs = { cfg ->
-                pendingSaveAsConfig = cfg
+            onExportSaveAs = { cfg, selectionOnly ->
+                pendingSaveAsConfig = cfg to selectionOnly
                 val base = (editorState.info?.displayName ?: "libreopus").substringBeforeLast('.')
-                saveAsLauncher.launch("${base}_edited.${cfg.format.extension}")
+                val suffix = if (selectionOnly) "_clip" else "_edited"
+                saveAsLauncher.launch("${base}${suffix}.${cfg.format.extension}")
             },
             pendingMixOverlayName = pendingMixTarget?.second,
             onConfirmMixOverlay = { offsetMs, baseGainDb, overlayGainDb ->
@@ -345,10 +376,10 @@ private fun LibreOpusAppContent(
                     state = downloadState,
                     viewModel = downloadVm,
                     hasActiveEditorSession = editorState.hasSession,
-                    onOpenInEditor = { audioFile, displayName, coverFile, coverMime, metadata ->
+                    onOpenInEditor = { audioFile, displayName, coverFile, coverMime, metadata, chapters ->
                         val coverBytes = coverFile?.takeIf { it.exists() }?.readBytes()
                         currentTab = TopTab.EDITOR
-                        editorVm.openLocalFile(audioFile, displayName, coverBytes, coverMime, metadata)
+                        editorVm.openLocalFile(audioFile, displayName, coverBytes, coverMime, metadata, chapters)
                     },
                     onUseAsCover = { imgFile, mime ->
                         val bytes = imgFile.takeIf { it.exists() }?.readBytes()
@@ -361,14 +392,14 @@ private fun LibreOpusAppContent(
                         val shareIntent = MediaStorageHelper.createShareIntent(context, file, mime)
                         context.startActivity(Intent.createChooser(shareIntent, shareTitle))
                     },
-                    onOpenHistoryUri = { uriStr ->
+                    onOpenHistoryUri = { uriStr, chapters ->
                         val uri = uriStr.toUri()
                         val readable = runCatching {
                             context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { } != null
                         }.getOrDefault(false)
                         if (readable) {
                             currentTab = TopTab.EDITOR
-                            editorVm.openUri(uri)
+                            editorVm.openUri(uri, chapters = chapters)
                         } else {
                             scope.launch {
                                 snackbarHostState.showSnackbar(missingFileMsg)

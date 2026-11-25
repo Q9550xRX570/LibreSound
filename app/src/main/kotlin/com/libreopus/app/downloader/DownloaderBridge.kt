@@ -3,6 +3,7 @@ package com.libreopus.app.downloader
 
 import android.content.Context
 import com.libreopus.audio.api.AudioMetadata
+import com.libreopus.audio.api.MediaChapter
 import java.io.File
 import kotlinx.coroutines.flow.StateFlow
 
@@ -154,6 +155,7 @@ data class DownloadHistoryEntry(
     val year: String = "",
     val durationSec: Int = 0,
     val formatLabel: String = "",
+    val chapters: List<MediaChapter> = emptyList(),
 )
 
 object DownloadHistoryCodec {
@@ -180,7 +182,15 @@ object DownloadHistoryCodec {
                 .append("\",\"year\":\"").append(escapeJsonString(e.year))
                 .append("\",\"durationSec\":").append(e.durationSec)
                 .append(",\"formatLabel\":\"").append(escapeJsonString(e.formatLabel))
-                .append("\"}")
+                .append("\",\"chapters\":[")
+            e.chapters.forEachIndexed { cIdx, ch ->
+                if (cIdx > 0) sb.append(',')
+                sb.append("{\"title\":\"").append(escapeJsonString(ch.title))
+                    .append("\",\"startMs\":").append(ch.startMs)
+                    .append(",\"endMs\":").append(ch.endMs)
+                    .append('}')
+            }
+            sb.append("]}")
         }
         sb.append(']')
         return sb.toString()
@@ -207,6 +217,14 @@ object DownloadHistoryCodec {
             val year = map["year"]?.toString().orEmpty()
             val durationSec = (map["durationSec"] as? Number)?.toInt() ?: 0
             val formatLabel = map["formatLabel"]?.toString().orEmpty()
+            val chapters = ((map["chapters"] as? List<*>).orEmpty()).mapNotNull { chObj ->
+                val chMap = chObj as? Map<*, *> ?: return@mapNotNull null
+                val chTitle = chMap["title"]?.toString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val startMs = (chMap["startMs"] as? Number)?.toLong() ?: return@mapNotNull null
+                val endMs = (chMap["endMs"] as? Number)?.toLong() ?: return@mapNotNull null
+                if (endMs <= startMs) return@mapNotNull null
+                MediaChapter(title = chTitle, startMs = startMs, endMs = endMs)
+            }
             DownloadHistoryEntry(
                 id = id,
                 title = title,
@@ -224,6 +242,7 @@ object DownloadHistoryCodec {
                 year = year,
                 durationSec = durationSec,
                 formatLabel = formatLabel,
+                chapters = chapters,
             )
         }.take(MAX_ENTRIES)
     }
@@ -252,6 +271,10 @@ data class DownloadExecutionOptions(
     val retries: Int = 3,
     val cacheDirPath: String? = null,
     val enableRemoteEjs: Boolean = true,
+    val titleOverride: String = "",
+    val artistOverride: String = "",
+    val albumOverride: String = "",
+    val embedThumbnailOverride: Boolean? = null,
 )
 
 data class MediaFormatOption(
@@ -283,10 +306,13 @@ data class PlaylistPreviewEntry(
     val uploader: String = "",
     val durationSec: Int = 0,
     val url: String = "",
+    val thumbnailUrl: String? = null,
 )
 
 data class MediaTrackPreview(
     val title: String,
+    val artist: String = "",
+    val album: String = "",
     val uploader: String = "",
     val durationSec: Int = 0,
     val thumbnailUrl: String? = null,
@@ -295,7 +321,9 @@ data class MediaTrackPreview(
     val audioExt: String? = null,
     val approxFileSizeBytes: Long = 0L,
     val formats: List<MediaFormatOption> = emptyList(),
+    val chapters: List<MediaChapter> = emptyList(),
     val isPlaylist: Boolean = false,
+    val isSearchResults: Boolean = false,
     val playlistTitle: String = "",
     val playlistCount: Int = 0,
     val playlistEntries: List<PlaylistPreviewEntry> = emptyList(),
@@ -332,6 +360,7 @@ data class DownloadedMediaItem(
     val metadata: AudioMetadata? = null,
     val durationSec: Int = 0,
     val formatLabel: String = "",
+    val chapters: List<MediaChapter> = emptyList(),
 )
 
 data class DownloadedArtifact(
@@ -346,6 +375,7 @@ data class DownloadedArtifact(
     val mediaItems: List<DownloadedMediaItem> = emptyList(),
     val imageFiles: List<File> = emptyList(),
     val subtitleFiles: List<File> = emptyList(),
+    val chapters: List<MediaChapter> = emptyList(),
 )
 
 interface MediaDownloader {
@@ -449,6 +479,44 @@ object PresetCommandBuilder {
         "--match-filter", "--compat-options",
     )
 
+    fun isDirectUrl(rawInput: String): Boolean {
+        val trimmed = rawInput.trim()
+        return trimmed.startsWith("http://", ignoreCase = true) ||
+            trimmed.startsWith("https://", ignoreCase = true) ||
+            trimmed.contains("://")
+    }
+
+    fun isSearchQuery(rawInput: String): Boolean {
+        val trimmed = rawInput.trim()
+        return trimmed.isNotBlank() && !isDirectUrl(trimmed)
+    }
+
+    fun resolvePreviewTarget(rawInput: String, maxSearchResults: Int = 8): String {
+        val trimmed = rawInput.trim()
+        if (trimmed.isBlank()) return ""
+        if (isSearchQuery(trimmed)) {
+            return if (trimmed.startsWith("ytsearch", ignoreCase = true) ||
+                trimmed.startsWith("scsearch", ignoreCase = true)
+            ) {
+                trimmed
+            } else {
+                "ytsearch${maxSearchResults.coerceIn(1, 20)}:$trimmed"
+            }
+        }
+        return parseUrls(trimmed).firstOrNull() ?: trimmed
+    }
+
+    fun sanitizeFilenameBase(rawTitle: String, fallback: String = "audio"): String {
+        val cleaned = rawTitle
+            .replace(Regex("[/\\\\:*?\"<>|\\p{Cntrl}]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .trim('.')
+            .take(96)
+            .trim()
+        return cleaned.ifBlank { fallback }
+    }
+
     fun parseUrls(rawInput: String): List<String> = rawInput
         .lineSequence()
         .flatMap { it.trim().split(Regex("\\s+")).asSequence() }
@@ -458,6 +526,11 @@ object PresetCommandBuilder {
         .toList()
 
     fun resolveOutputTemplate(workDir: File, execOptions: DownloadExecutionOptions): String {
+        val overrideBase = execOptions.titleOverride.trim()
+        if (overrideBase.isNotBlank() && !execOptions.allowPlaylist) {
+            val safeBase = sanitizeFilenameBase(overrideBase).replace("%", "%%")
+            return File(workDir, "$safeBase.%(ext)s").absolutePath
+        }
         val rawPattern = when (execOptions.filenameTemplate) {
             FilenameTemplate.CUSTOM -> execOptions.customOutputTemplate.trim()
             else -> execOptions.filenameTemplate.pattern
@@ -759,6 +832,21 @@ object PresetCommandBuilder {
 
 object DumpJsonPreviewParser {
 
+    fun parseChapters(root: Map<*, *>): List<MediaChapter> {
+        val raw = root["chapters"] as? List<*> ?: return emptyList()
+        return raw.mapIndexedNotNull { idx, item ->
+            val m = item as? Map<*, *> ?: return@mapIndexedNotNull null
+            val startSec = (m["start_time"] as? Number)?.toDouble() ?: return@mapIndexedNotNull null
+            val endSec = (m["end_time"] as? Number)?.toDouble() ?: return@mapIndexedNotNull null
+            val startMs = (startSec * 1000.0).toLong().coerceAtLeast(0L)
+            val endMs = (endSec * 1000.0).toLong()
+            if (endMs <= startMs) return@mapIndexedNotNull null
+            val title = m["title"]?.toString()?.trim()?.takeIf { it.isNotBlank() && it != "null" }
+                ?: "Chapter ${idx + 1}"
+            MediaChapter(title = title, startMs = startMs, endMs = endMs)
+        }
+    }
+
     fun parse(
         jsonText: String,
         sourceUrl: String,
@@ -766,23 +854,44 @@ object DumpJsonPreviewParser {
     ): MediaTrackPreview? {
         val root = runCatching { SimpleJsonParser.parse(jsonText) as? Map<*, *> }.getOrNull() ?: return null
 
+        val isSearch = sourceUrl.startsWith("ytsearch", ignoreCase = true) ||
+            sourceUrl.startsWith("scsearch", ignoreCase = true)
         val type = root["_type"]?.toString().orEmpty()
         val entriesRaw = (root["entries"] as? List<*>)?.mapNotNull { it as? Map<*, *> }.orEmpty()
-        if (type == "playlist" || entriesRaw.isNotEmpty()) {
+        if (type == "playlist" || isSearch || entriesRaw.isNotEmpty()) {
             val playlistTitle = root["title"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
-                ?: "Playlist"
+                ?: if (isSearch) sourceUrl.substringAfter(':') else "Playlist"
             val entries = entriesRaw.mapIndexed { idx, e ->
+                val rawId = e["id"]?.toString()?.trim()?.takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+                val rawEntryUrl = listOf("webpage_url", "url", "original_url")
+                    .firstNotNullOfOrNull { k -> e[k]?.toString()?.trim()?.takeIf { it.isNotBlank() && it != "null" } }
+                    .orEmpty()
+                val resolvedUrl = when {
+                    rawEntryUrl.startsWith("http://", ignoreCase = true) ||
+                        rawEntryUrl.startsWith("https://", ignoreCase = true) -> rawEntryUrl
+                    rawEntryUrl.matches(Regex("[A-Za-z0-9_-]{11}")) -> "https://www.youtube.com/watch?v=$rawEntryUrl"
+                    rawId.matches(Regex("[A-Za-z0-9_-]{11}")) -> "https://www.youtube.com/watch?v=$rawId"
+                    else -> rawEntryUrl
+                }
+                val entryThumb = listOfNotNull(
+                    e["thumbnail"]?.toString()?.trim()?.takeIf { it.startsWith("http") },
+                    (e["thumbnails"] as? List<*>)
+                        ?.mapNotNull { it as? Map<*, *> }
+                        ?.lastOrNull()
+                        ?.get("url")?.toString()?.trim()?.takeIf { it.startsWith("http") },
+                    rawId.takeIf { it.matches(Regex("[A-Za-z0-9_-]{11}")) }
+                        ?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" },
+                ).firstOrNull()
                 PlaylistPreviewEntry(
                     index = (e["playlist_index"] as? Number)?.toInt() ?: (idx + 1),
                     title = e["title"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
                         ?: "Track ${idx + 1}",
-                    uploader = listOf("uploader", "channel", "creator")
+                    uploader = listOf("uploader", "channel", "creator", "artist")
                         .firstNotNullOfOrNull { k -> e[k]?.toString()?.takeIf { it.isNotBlank() && it != "null" } }
                         .orEmpty(),
                     durationSec = ((e["duration"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
-                    url = e["url"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
-                        ?: e["webpage_url"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
-                        ?: "",
+                    url = resolvedUrl,
+                    thumbnailUrl = entryThumb,
                 )
             }
             val totalCount = ((root["playlist_count"] as? Number)?.toInt() ?: entries.size).coerceAtLeast(entries.size)
@@ -796,7 +905,8 @@ object DumpJsonPreviewParser {
                 webpageUrl = root["webpage_url"]?.toString()?.takeIf { it.isNotBlank() && it != "null" } ?: sourceUrl,
                 extractor = root["extractor_key"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
                     ?: root["extractor"]?.toString()?.takeIf { it.isNotBlank() && it != "null" },
-                isPlaylist = true,
+                isPlaylist = !isSearch,
+                isSearchResults = isSearch,
                 playlistTitle = playlistTitle,
                 playlistCount = totalCount,
                 playlistEntries = entries,
@@ -858,7 +968,8 @@ object DumpJsonPreviewParser {
             ?: (root["filesize_approx"] as? Number)?.toLong()
             ?: 0L).coerceAtLeast(0L)
 
-        val title = root["title"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+        val title = root["track"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
+            ?: root["title"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
             ?: root["fulltitle"]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
             ?: "Media"
 
@@ -866,9 +977,21 @@ object DumpJsonPreviewParser {
             .firstNotNullOfOrNull { key ->
                 root[key]?.toString()?.takeIf { it.isNotBlank() && it != "null" }
             }.orEmpty()
+        val artistsList = (root["artists"] as? List<*>)
+            ?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotBlank() && s != "null" } }
+            ?.joinToString(", ")
+            .orEmpty()
+        val artist = listOf(
+            root["artist"]?.toString()?.trim()?.takeIf { it != "null" }.orEmpty(),
+            artistsList,
+            uploader,
+        ).firstOrNull { it.isNotBlank() }.orEmpty()
+        val album = root["album"]?.toString()?.trim()?.takeIf { it.isNotBlank() && it != "null" }.orEmpty()
 
         return MediaTrackPreview(
             title = title,
+            artist = artist,
+            album = album,
             uploader = uploader,
             durationSec = ((root["duration"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
             thumbnailUrl = root["thumbnail"]?.toString()?.takeIf { it.isNotBlank() && it != "null" },
@@ -878,6 +1001,7 @@ object DumpJsonPreviewParser {
             audioExt = bestAudio?.ext ?: root["ext"]?.toString()?.takeIf { it.isNotBlank() && it != "null" },
             approxFileSizeBytes = approxSize,
             formats = sortedFormats,
+            chapters = parseChapters(root),
         )
     }
 }
@@ -960,6 +1084,7 @@ data class InfoJsonDetails(
     val thumbnailUrl: String? = null,
     val durationSec: Int = 0,
     val formatLabel: String = "",
+    val chapters: List<MediaChapter> = emptyList(),
 )
 
 object InfoJsonMetadataParser {
@@ -1048,6 +1173,7 @@ object InfoJsonMetadataParser {
             thumbnailUrl = thumbnailUrl,
             durationSec = durationSec,
             formatLabel = formatLabel,
+            chapters = DumpJsonPreviewParser.parseChapters(root),
         )
     }
 }

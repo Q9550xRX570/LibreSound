@@ -272,4 +272,73 @@ class CookieAndMetadataParserTest {
         assertEquals("M4A • 128 kbps • mp4a", details.formatLabel)
         assertEquals("Demo Track", details.metadata?.title)
     }
+
+    @Test
+    fun `dumpJsonPreviewParser parses ytsearch8 results and track chapters accurately`() {
+        val searchJson = """
+            {
+              "_type": "playlist",
+              "title": "lofi beats",
+              "entries": [
+                {
+                  "id": "dQw4w9WgXcQ",
+                  "url": "dQw4w9WgXcQ",
+                  "title": "Lo-Fi Study Beats",
+                  "channel": "Chill Studio",
+                  "duration": 212
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val searchPreview = DumpJsonPreviewParser.parse(searchJson, sourceUrl = "ytsearch8:lofi beats")
+        assertNotNull(searchPreview)
+        assertTrue(searchPreview!!.isSearchResults)
+        assertFalse(searchPreview.isPlaylist)
+        assertEquals(1, searchPreview.playlistEntries.size)
+        assertEquals("https://www.youtube.com/watch?v=dQw4w9WgXcQ", searchPreview.playlistEntries[0].url)
+        assertEquals("https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg", searchPreview.playlistEntries[0].thumbnailUrl)
+
+        val singleJson = """
+            {
+              "title": "Full Mix Video",
+              "track": "Clean Track",
+              "artist": "Studio Artist",
+              "album": "Studio Album",
+              "duration": 300,
+              "chapters": [
+                {"title": "Intro", "start_time": 0.0, "end_time": 60.5},
+                {"title": "Main Theme", "start_time": 60.5, "end_time": 180.0}
+              ],
+              "formats": [
+                {"format_id": "251", "ext": "webm", "acodec": "opus", "vcodec": "none", "abr": 160}
+              ]
+            }
+        """.trimIndent()
+        val trackPreview = DumpJsonPreviewParser.parse(singleJson, sourceUrl = "https://youtube.com/watch?v=dQw4w9WgXcQ")
+        assertNotNull(trackPreview)
+        assertEquals("Clean Track", trackPreview!!.title)
+        assertEquals("Studio Artist", trackPreview.artist)
+        assertEquals("Studio Album", trackPreview.album)
+        assertEquals(2, trackPreview.chapters.size)
+        assertEquals(0L, trackPreview.chapters[0].startMs)
+        assertEquals(60500L, trackPreview.chapters[0].endMs)
+        assertEquals("Main Theme", trackPreview.chapters[1].title)
+
+        val details = InfoJsonMetadataParser.parseDetails(singleJson)
+        assertEquals(2, details?.chapters?.size)
+
+        val historyWithChapters = listOf(
+            DownloadHistoryEntry(
+                id = "ch1",
+                title = "Full Mix",
+                sourceUrl = "https://youtube.com/watch?v=dQw4w9WgXcQ",
+                savedPath = "Music/LibreOpus/mix.opus",
+                chapters = trackPreview.chapters,
+            ),
+        )
+        val roundTripped = DownloadHistoryCodec.decode(DownloadHistoryCodec.encode(historyWithChapters))
+        assertEquals(2, roundTripped.first().chapters.size)
+        assertEquals(60500L, roundTripped.first().chapters[1].startMs)
+    }
 }

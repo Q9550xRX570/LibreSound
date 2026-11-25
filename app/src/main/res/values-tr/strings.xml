@@ -339,4 +339,61 @@
     <string name="converter_samplerate_original">Orijinal</string>
     <string name="converter_samplerate_opus_note">Opus standardı gereği her zaman 48 kHz kullanır</string>
     <string name="converter_wav_depth_label">WAV Bit Derinliği</string>
+
+    <!-- Zil Sesi / Dışa Aktarım Hedefi & Seçili Alan -->
+    <string name="export_target_label">Hedef Klasör</string>
+    <string name="export_target_music">Müzik</string>
+    <string name="export_target_ringtone">Zil Sesi</string>
+    <string name="export_target_notification">Bildirim</string>
+    <string name="export_target_alarm">Alarm</string>
+    <string name="export_assign_default_tone">Kaydettikten sonra varsayılan yap</string>
+    <string name="export_ringtone_compat_note">Telefonlarla tam uyum için format M4A (AAC) olarak seçildi</string>
+    <string name="export_range_label">Dışa Aktarım Aralığı</string>
+    <string name="export_range_full">Tamamı</string>
+    <string name="export_range_selection">Seçili Alan (%1$s)</string>
+    <string name="export_save_to_target">%1$s Klasörüne Kaydet</string>
+    <string name="export_save_and_set_default">Kaydet ve Varsayılan Yap</string>
+    <string name="export_ringtone_assigned">Varsayılan olarak ayarlandı: %1$s</string>
+    <string name="export_ringtone_grant_perm">Varsayılan ses atamak için sistem ayarı izni verin</string>
+
+    <!-- İndirici Arama, Ön Etiket Düzenleme & Bölümler -->
+    <string name="download_search_action">Ara</string>
+    <string name="download_searching">Aranıyor…</string>
+    <string name="download_search_results_title">Arama Sonuçları (%1$d)</string>
+    <string name="download_meta_edit_toggle">Etiketleri ve Kapağı İndirmeden Önce Düzenle</string>
+    <string name="download_meta_title_label">Dosya ve Parça Başlığı</string>
+    <string name="download_meta_artist_label">Sanatçı</string>
+    <string name="download_meta_album_label">Albüm</string>
+    <string name="download_meta_embed_cover">Kapak görselini dosyaya göm</string>
+    <string name="download_chapters_count">%1$d Bölüm</string>
+    <string name="download_prop_chapters">Bölümler</string>
+    <string name="editor_chapters_label">Bölümler</string>
+
+    <!-- AudioLab DSP Efektleri -->
+    <string name="effect_compressor">Kompresör</string>
+    <string name="effect_reverb">Yankı / Reverb</string>
+    <string name="effect_stereo_bass">Stereo &amp; Bas</string>
+    <string name="comp_preset_gentle">Yumuşak</string>
+    <string name="comp_preset_vocal">Vokal</string>
+    <string name="comp_preset_podcast">Podcast</string>
+    <string name="comp_preset_punchy">Güçlü</string>
+    <string name="comp_threshold_label">Eşik: %1$.0f dB</string>
+    <string name="comp_ratio_label">Oran: %1$.1f:1</string>
+    <string name="comp_attack_label">Saldırı (Attack): %1$.0f ms</string>
+    <string name="comp_release_label">Bırakma (Release): %1$.0f ms</string>
+    <string name="comp_makeup_label">Telafi Kazancı: +%1$.1f dB</string>
+    <string name="reverb_preset_room">Küçük Oda</string>
+    <string name="reverb_preset_hall">Konser Salonu</string>
+    <string name="reverb_preset_plate">Stüdyo Plaka</string>
+    <string name="reverb_preset_echo">Eko Gecikme</string>
+    <string name="reverb_delay_label">Gecikme / Oda Boyutu: %1$.0f ms</string>
+    <string name="reverb_feedback_label">Sönümleme / Geri Besleme: %1$d%%</string>
+    <string name="reverb_damping_label">Sıcak Yumuşatma: %1$d%%</string>
+    <string name="reverb_wet_label">Efekt Karışımı (Wet): %1$d%%</string>
+    <string name="stereo_preset_mono">Odaklı</string>
+    <string name="stereo_preset_warm">Sıcak Bas</string>
+    <string name="stereo_preset_wide">Geniş Sahne</string>
+    <string name="stereo_preset_club">Kulüp</string>
+    <string name="stereo_width_label">Stereo Genişlik: %1$d%%</string>
+    <string name="bass_boost_label">Bas Güçlendirme: +%1$.1f dB</string>
 </resources>

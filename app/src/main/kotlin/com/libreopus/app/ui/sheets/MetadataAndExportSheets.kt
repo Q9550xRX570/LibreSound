@@ -41,6 +41,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.libreopus.app.R
+import com.libreopus.app.data.ExportTargetType
 import com.libreopus.app.data.Formatters
 import com.libreopus.audio.api.AudioInfo
 import com.libreopus.audio.api.AudioMetadata
@@ -168,31 +169,49 @@ fun MetadataSheet(
 fun ExportSheet(
     info: AudioInfo?,
     durationMs: Long,
+    selectionStartMs: Long,
+    selectionEndMs: Long,
     metadata: AudioMetadata,
     isLosslessOpusReady: Boolean,
     defaultFormat: ExportFormat,
     defaultBitrateKbps: Int,
-    onExportToMusic: (ExportConfig, shareAfter: Boolean) -> Unit,
-    onExportSaveAs: (ExportConfig) -> Unit,
+    onExportToMusic: (
+        ExportConfig,
+        shareAfter: Boolean,
+        targetType: ExportTargetType,
+        assignAsDefault: Boolean,
+        selectionOnly: Boolean,
+    ) -> Unit,
+    onExportSaveAs: (ExportConfig, selectionOnly: Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val hasSubSelection = durationMs > 0L &&
+        selectionEndMs > selectionStartMs &&
+        (selectionStartMs > 10L || selectionEndMs < durationMs - 10L)
+    val selectedSpanMs = if (hasSubSelection) (selectionEndMs - selectionStartMs).coerceAtLeast(1L) else durationMs
+
+    var targetType by remember { mutableStateOf(ExportTargetType.MUSIC) }
+    var assignAsDefault by remember { mutableStateOf(true) }
+    var selectionOnly by remember { mutableStateOf(false) }
     var format by remember {
         mutableStateOf(if (isLosslessOpusReady) ExportFormat.OPUS else defaultFormat)
     }
+    var switchedToCompatM4a by remember { mutableStateOf(false) }
     var bitrateKbps by remember { mutableIntStateOf(defaultBitrateKbps.coerceIn(32, 320)) }
     var channelMode by remember { mutableStateOf(ChannelMode.KEEP) }
     var wavDepth by remember { mutableStateOf(WavBitDepth.PCM_16) }
     var losslessCopy by remember { mutableStateOf(isLosslessOpusReady) }
 
+    val effectiveDurationMs = if (hasSubSelection && selectionOnly) selectedSpanMs else durationMs
     val canUseLossless = isLosslessOpusReady &&
         (format == ExportFormat.OPUS || format == ExportFormat.OGG_OPUS) &&
         channelMode == ChannelMode.KEEP
 
     val estBytes = if (canUseLossless && losslessCopy && info != null && info.durationMs > 0L) {
-        ((info.fileSizeBytes.toDouble() * durationMs) / info.durationMs).toLong()
+        ((info.fileSizeBytes.toDouble() * effectiveDurationMs) / info.durationMs).toLong()
     } else {
         Formatters.estimateExportSizeBytes(
-            durationMs = durationMs,
+            durationMs = effectiveDurationMs,
             format = format,
             bitrateKbps = bitrateKbps,
             sampleRate = info?.sampleRate ?: 48000,
@@ -214,6 +233,13 @@ fun ExportSheet(
         metadata = metadata,
     )
 
+    val targetLabel = when (targetType) {
+        ExportTargetType.MUSIC -> stringResource(R.string.export_target_music)
+        ExportTargetType.RINGTONE -> stringResource(R.string.export_target_ringtone)
+        ExportTargetType.NOTIFICATION -> stringResource(R.string.export_target_notification)
+        ExportTargetType.ALARM -> stringResource(R.string.export_target_alarm)
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -225,12 +251,88 @@ fun ExportSheet(
         ) {
             Text(stringResource(R.string.export_title), style = MaterialTheme.typography.headlineSmall)
 
+            // Export Destination (Music / Ringtone / Notification / Alarm)
+            Text(stringResource(R.string.export_target_label), style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val targets = listOf(
+                    ExportTargetType.MUSIC to stringResource(R.string.export_target_music),
+                    ExportTargetType.RINGTONE to stringResource(R.string.export_target_ringtone),
+                    ExportTargetType.NOTIFICATION to stringResource(R.string.export_target_notification),
+                    ExportTargetType.ALARM to stringResource(R.string.export_target_alarm),
+                )
+                targets.forEach { (tgt, label) ->
+                    FilterChip(
+                        selected = targetType == tgt,
+                        onClick = {
+                            val wasMusic = targetType == ExportTargetType.MUSIC
+                            targetType = tgt
+                            if (tgt != ExportTargetType.MUSIC && wasMusic && format != ExportFormat.M4A) {
+                                format = ExportFormat.M4A
+                                losslessCopy = false
+                                switchedToCompatM4a = true
+                            } else if (tgt == ExportTargetType.MUSIC) {
+                                switchedToCompatM4a = false
+                            }
+                        },
+                        label = { Text(label) },
+                    )
+                }
+            }
+
+            if (targetType != ExportTargetType.MUSIC) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.export_assign_default_tone),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(checked = assignAsDefault, onCheckedChange = { assignAsDefault = it })
+                }
+                if (switchedToCompatM4a && format == ExportFormat.M4A) {
+                    Text(
+                        stringResource(R.string.export_ringtone_compat_note),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
+            if (hasSubSelection) {
+                Text(stringResource(R.string.export_range_label), style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = !selectionOnly,
+                        onClick = { selectionOnly = false },
+                        label = { Text(stringResource(R.string.export_range_full)) },
+                    )
+                    FilterChip(
+                        selected = selectionOnly,
+                        onClick = { selectionOnly = true },
+                        label = {
+                            Text(
+                                stringResource(
+                                    R.string.export_range_selection,
+                                    Formatters.formatDurationMs(selectedSpanMs, includeMillis = false),
+                                ),
+                            )
+                        },
+                    )
+                }
+            }
+
             Text(stringResource(R.string.export_format), style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ExportFormat.entries.forEach { fmt ->
                     FilterChip(
                         selected = format == fmt,
-                        onClick = { format = fmt },
+                        onClick = {
+                            format = fmt
+                            switchedToCompatM4a = false
+                        },
                         label = { Text(fmt.displayName) },
                     )
                 }
@@ -253,6 +355,7 @@ fun ExportSheet(
 
             if (format.supportsBitrate && !(canUseLossless && losslessCopy)) {
                 Text(stringResource(R.string.export_bitrate, bitrateKbps))
+                @Suppress("DEPRECATION")
                 Slider(
                     value = bitrateKbps.toFloat(),
                     onValueChange = { bitrateKbps = (it / 8f).roundToInt() * 8 },
@@ -293,20 +396,44 @@ fun ExportSheet(
             )
 
             Button(
-                onClick = { onExportToMusic(buildConfig(), false); onDismiss() },
+                onClick = {
+                    onExportToMusic(
+                        buildConfig(),
+                        false,
+                        targetType,
+                        targetType != ExportTargetType.MUSIC && assignAsDefault,
+                        hasSubSelection && selectionOnly,
+                    )
+                    onDismiss()
+                },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(stringResource(R.string.export_save_music))
+                Text(
+                    when {
+                        targetType == ExportTargetType.MUSIC -> stringResource(R.string.export_save_music)
+                        assignAsDefault -> stringResource(R.string.export_save_and_set_default)
+                        else -> stringResource(R.string.export_save_to_target, targetLabel)
+                    },
+                )
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(
-                    onClick = { onExportSaveAs(buildConfig()); onDismiss() },
+                    onClick = { onExportSaveAs(buildConfig(), hasSubSelection && selectionOnly); onDismiss() },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(stringResource(R.string.export_save_as))
                 }
                 OutlinedButton(
-                    onClick = { onExportToMusic(buildConfig(), true); onDismiss() },
+                    onClick = {
+                        onExportToMusic(
+                            buildConfig(),
+                            true,
+                            targetType,
+                            false,
+                            hasSubSelection && selectionOnly,
+                        )
+                        onDismiss()
+                    },
                     modifier = Modifier.weight(1f),
                 ) {
                     Text(stringResource(R.string.export_share))

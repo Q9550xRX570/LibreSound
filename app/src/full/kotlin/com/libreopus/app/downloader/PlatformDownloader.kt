@@ -148,12 +148,14 @@ object PlatformDownloader {
             val appCtx = context.applicationContext
             ensureInitialized(appCtx)
             val baseOptions = prepareOptionsWithCache(appCtx, options)
-            val firstUrl = PresetCommandBuilder.parseUrls(url).firstOrNull() ?: url.trim()
+            val firstUrl = PresetCommandBuilder.resolvePreviewTarget(url, maxSearchResults = 8)
+            val isSearch = firstUrl.startsWith("ytsearch", ignoreCase = true) ||
+                firstUrl.startsWith("scsearch", ignoreCase = true)
 
             fun buildPreviewReq(opts: DownloadExecutionOptions): YoutubeDLRequest = YoutubeDLRequest(firstUrl).apply {
                 addOption("-J")
                 addOption("--no-warnings")
-                if (opts.allowPlaylist) {
+                if (opts.allowPlaylist || isSearch) {
                     addOption("--flat-playlist")
                 } else {
                     addOption("--no-playlist")
@@ -288,7 +290,7 @@ object PlatformDownloader {
                     if (activeProcessId == procId) activeProcessId = null
                 }
 
-                val artifact = collectArtifact(appCtx, workDir, urls, url, preset)
+                val artifact = collectArtifact(appCtx, workDir, urls, url, preset, attemptOpts)
                 if (artifact.mediaItems.isEmpty() && artifact.imageFile == null && artifact.subtitleFiles.isEmpty()) {
                     throw YoutubeDLException("No downloadable media output produced by yt-dlp.")
                 }
@@ -485,6 +487,7 @@ object PlatformDownloader {
             urls: List<String>,
             rawUrl: String,
             preset: DownloadPreset,
+            options: DownloadExecutionOptions,
         ): DownloadedArtifact {
             val files = workDir.listFiles()?.filter { it.isFile && it.length() > 0L } ?: emptyList()
             val audioOnlyExts = setOf("opus", "ogg", "m4a", "aac", "mp3", "flac", "wav", "mka")
@@ -533,6 +536,11 @@ object PlatformDownloader {
                 .filter { it.extension.lowercase() in mediaExts }
                 .sortedByDescending { it.length() }
 
+            val shouldEmbedThumb = options.embedThumbnailOverride != false
+            val customTitle = options.titleOverride.trim()
+            val customArtist = options.artistOverride.trim()
+            val customAlbum = options.albumOverride.trim()
+
             val mediaItems = mediaFiles.map { mediaFile ->
                 val ext = mediaFile.extension.lowercase()
                 val isVideo = ext in videoOrContainerExts ||
@@ -541,40 +549,53 @@ object PlatformDownloader {
                 val base = mediaFile.nameWithoutExtension
                 val itemDetails = infoJsonDetailsMap[base] ?: fallbackDetails
                 val baseMeta = itemDetails?.metadata
-                val itemThumbFile = if (itemDetails?.thumbnailUrl != null &&
+                val itemThumbFile = if (shouldEmbedThumb &&
+                    itemDetails?.thumbnailUrl != null &&
                     itemDetails.thumbnailUrl != fallbackDetails?.thumbnailUrl
                 ) {
                     fetchOrCacheThumbnail(appCtx, itemDetails.thumbnailUrl)
                 } else {
                     null
                 }
-                val itemCoverBytes = itemThumbFile?.takeIf { it.exists() && it.length() in 1L..4_000_000L }
-                    ?.let { runCatching { it.readBytes() }.getOrNull() } ?: coverBytes
-                val itemCoverMime = if (itemThumbFile != null) "image/jpeg" else (imageMime ?: "image/jpeg")
-
-                val finalMeta = if (baseMeta != null || itemCoverBytes != null) {
-                    val m = baseMeta ?: AudioMetadata(title = mediaFile.nameWithoutExtension)
-                    if (itemCoverBytes != null) {
-                        m.copy(coverArtBytes = itemCoverBytes, coverArtMimeType = itemCoverMime)
-                    } else {
-                        m
-                    }
+                val itemCoverBytes = if (shouldEmbedThumb) {
+                    itemThumbFile?.takeIf { it.exists() && it.length() in 1L..4_000_000L }
+                        ?.let { runCatching { it.readBytes() }.getOrNull() } ?: coverBytes
                 } else {
                     null
                 }
+                val itemCoverMime = if (itemThumbFile != null) "image/jpeg" else (imageMime ?: "image/jpeg")
+
+                val rawMeta = baseMeta ?: AudioMetadata(title = mediaFile.nameWithoutExtension)
+                val mergedMeta = rawMeta.copy(
+                    title = customTitle.ifBlank { rawMeta.title },
+                    artist = customArtist.ifBlank { rawMeta.artist },
+                    album = customAlbum.ifBlank { rawMeta.album },
+                )
+                val finalMeta = if (itemCoverBytes != null) {
+                    mergedMeta.copy(coverArtBytes = itemCoverBytes, coverArtMimeType = itemCoverMime)
+                } else {
+                    mergedMeta.copy(coverArtBytes = null, coverArtMimeType = null)
+                }.takeUnless { it.isEmpty }
 
                 if (finalMeta != null && !finalMeta.isEmpty) {
                     embedMetadataIntoDownloadedFile(mediaFile, workDir, finalMeta)
                 }
 
+                val outDisplayName = if (customTitle.isNotBlank() && mediaFiles.size == 1 && !options.allowPlaylist) {
+                    "${PresetCommandBuilder.sanitizeFilenameBase(customTitle)}.$ext"
+                } else {
+                    mediaFile.name
+                }
+
                 DownloadedMediaItem(
                     file = mediaFile,
-                    displayName = mediaFile.name,
+                    displayName = outDisplayName,
                     isVideo = isVideo,
                     mimeType = mime,
                     metadata = finalMeta,
                     durationSec = itemDetails?.durationSec ?: 0,
                     formatLabel = itemDetails?.formatLabel?.ifBlank { ext.uppercase() } ?: ext.uppercase(),
+                    chapters = itemDetails?.chapters.orEmpty(),
                 )
             }
 
@@ -596,6 +617,7 @@ object PlatformDownloader {
                 mediaItems = mediaItems,
                 imageFiles = if (normalizedImages.isNotEmpty()) normalizedImages else listOfNotNull(coverFile),
                 subtitleFiles = subtitleFiles,
+                chapters = primaryMedia?.chapters ?: fallbackDetails?.chapters.orEmpty(),
             )
         }
 

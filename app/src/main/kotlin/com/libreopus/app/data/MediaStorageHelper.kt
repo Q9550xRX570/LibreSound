@@ -5,16 +5,44 @@ import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.provider.Settings
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import com.libreopus.audio.api.AudioSource
 import com.libreopus.audio.api.ExportFormat
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+
+enum class ExportTargetType(
+    val displayDir: String,
+    val ringtoneType: Int?,
+) {
+    MUSIC("Music/LibreOpus", null),
+    RINGTONE("Ringtones/LibreOpus", RingtoneManager.TYPE_RINGTONE),
+    NOTIFICATION("Notifications/LibreOpus", RingtoneManager.TYPE_NOTIFICATION),
+    ALARM("Alarms/LibreOpus", RingtoneManager.TYPE_ALARM),
+    ;
+
+    fun resolveRelativeBaseDir(): String = when (this) {
+        MUSIC -> Environment.DIRECTORY_MUSIC ?: "Music"
+        RINGTONE -> Environment.DIRECTORY_RINGTONES ?: "Ringtones"
+        NOTIFICATION -> Environment.DIRECTORY_NOTIFICATIONS ?: "Notifications"
+        ALARM -> Environment.DIRECTORY_ALARMS ?: "Alarms"
+    }
+}
+
+enum class RingtoneAssignOutcome {
+    ASSIGNED,
+    NEEDS_PERMISSION,
+    FALLBACK_TO_PICKER,
+    FAILED,
+}
 
 class ContentUriAudioSource(
     private val resolver: ContentResolver,
@@ -59,6 +87,24 @@ object MediaStorageHelper {
         }
     }
 
+    data class ExportTargetSpec(
+        val relativePath: String,
+        val displayDir: String,
+        val isMusic: Boolean,
+        val isRingtone: Boolean,
+        val isNotification: Boolean,
+        val isAlarm: Boolean,
+    )
+
+    fun buildExportTargetSpec(targetType: ExportTargetType): ExportTargetSpec = ExportTargetSpec(
+        relativePath = "${targetType.resolveRelativeBaseDir()}/LibreOpus",
+        displayDir = targetType.displayDir,
+        isMusic = targetType == ExportTargetType.MUSIC,
+        isRingtone = targetType == ExportTargetType.RINGTONE,
+        isNotification = targetType == ExportTargetType.NOTIFICATION,
+        isAlarm = targetType == ExportTargetType.ALARM,
+    )
+
     /**
      * Inserts a new audio entry in `Music/LibreOpus` via MediaStore (API 29+ requires zero storage permissions).
      */
@@ -66,11 +112,35 @@ object MediaStorageHelper {
         context: Context,
         fileName: String,
         format: ExportFormat,
+    ): Pair<Uri, OutputStream> = createAudioExportTarget(
+        context = context,
+        fileName = fileName,
+        format = format,
+        targetType = ExportTargetType.MUSIC,
+        title = "",
+    )
+
+    /**
+     * Inserts a new audio entry into Music, Ringtones, Notifications, or Alarms under MediaStore.
+     */
+    fun createAudioExportTarget(
+        context: Context,
+        fileName: String,
+        format: ExportFormat,
+        targetType: ExportTargetType,
+        title: String = "",
     ): Pair<Uri, OutputStream> {
+        val spec = buildExportTargetSpec(targetType)
+        val cleanTitle = title.trim().ifBlank { fileName.substringBeforeLast('.') }
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Audio.Media.TITLE, cleanTitle)
             put(MediaStore.Audio.Media.MIME_TYPE, format.mimeType)
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/LibreOpus")
+            put(MediaStore.Audio.Media.RELATIVE_PATH, spec.relativePath)
+            put(MediaStore.Audio.Media.IS_MUSIC, if (spec.isMusic) 1 else 0)
+            put(MediaStore.Audio.Media.IS_RINGTONE, if (spec.isRingtone) 1 else 0)
+            put(MediaStore.Audio.Media.IS_NOTIFICATION, if (spec.isNotification) 1 else 0)
+            put(MediaStore.Audio.Media.IS_ALARM, if (spec.isAlarm) 1 else 0)
             put(MediaStore.Audio.Media.IS_PENDING, 1)
         }
         val uri = context.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
@@ -85,6 +155,42 @@ object MediaStorageHelper {
             put(MediaStore.Audio.Media.IS_PENDING, 0)
         }
         context.contentResolver.update(uri, values, null, null)
+    }
+
+    fun canWriteSystemSettings(context: Context): Boolean = Settings.System.canWrite(context)
+
+    fun buildManageWriteSettingsIntent(context: Context): Intent =
+        Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, "package:${context.packageName}".toUri())
+
+    fun buildRingtonePickerIntent(
+        targetType: ExportTargetType,
+        title: String,
+        existingUri: Uri?,
+    ): Intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+        putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, targetType.ringtoneType ?: RingtoneManager.TYPE_RINGTONE)
+        putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, title)
+        putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+        putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+        existingUri?.let { putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, it) }
+    }
+
+    fun buildSoundSettingsIntent(): Intent = Intent(Settings.ACTION_SOUND_SETTINGS)
+
+    fun assignDefaultRingtone(
+        context: Context,
+        uri: Uri,
+        targetType: ExportTargetType,
+    ): RingtoneAssignOutcome {
+        val rType = targetType.ringtoneType ?: return RingtoneAssignOutcome.FAILED
+        if (!Settings.System.canWrite(context)) return RingtoneAssignOutcome.NEEDS_PERMISSION
+        return try {
+            RingtoneManager.setActualDefaultRingtoneUri(context, rType, uri)
+            RingtoneAssignOutcome.ASSIGNED
+        } catch (_: SecurityException) {
+            RingtoneAssignOutcome.FALLBACK_TO_PICKER
+        } catch (_: Throwable) {
+            RingtoneAssignOutcome.FAILED
+        }
     }
 
     data class SavedStorageEntry(

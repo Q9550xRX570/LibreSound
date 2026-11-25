@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Compress
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.ContentPaste
@@ -41,7 +42,9 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.SpaceBar
+import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.SurroundSound
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Tag
 import androidx.compose.material.icons.rounded.Tune
@@ -89,6 +92,7 @@ import com.libreopus.app.R
 import com.libreopus.app.data.Formatters
 import com.libreopus.app.ui.components.WaveformCanvas
 import com.libreopus.app.ui.sheets.ChannelSheet
+import com.libreopus.app.ui.sheets.CompressorSheet
 import com.libreopus.app.ui.sheets.EqualizerSheet
 import com.libreopus.app.ui.sheets.ExportSheet
 import com.libreopus.app.ui.sheets.FadeSheet
@@ -97,8 +101,10 @@ import com.libreopus.app.ui.sheets.GainNormalizeSheet
 import com.libreopus.app.ui.sheets.InsertSilenceDialog
 import com.libreopus.app.ui.sheets.MetadataSheet
 import com.libreopus.app.ui.sheets.MixOverlaySheet
+import com.libreopus.app.ui.sheets.ReverbEchoSheet
 import com.libreopus.app.ui.sheets.SpeedPitchSheet
 import com.libreopus.app.ui.sheets.SplitOptionsSheet
+import com.libreopus.app.ui.sheets.StereoBassSheet
 import com.libreopus.app.viewmodel.EditorUiState
 import com.libreopus.app.viewmodel.EditorViewModel
 import com.libreopus.app.viewmodel.TrimMarkerTarget
@@ -108,7 +114,7 @@ import com.libreopus.audio.api.ExportFormat
 import kotlin.math.abs
 
 private enum class ActiveSheet {
-    NONE, GAIN_NORM, FADE, EQ, SPEED_PITCH, FILTER_GATE, CHANNELS, METADATA, EXPORT, SPLIT, INSERT_SILENCE
+    NONE, GAIN_NORM, FADE, EQ, SPEED_PITCH, FILTER_GATE, COMPRESSOR, REVERB, STEREO_BASS, CHANNELS, METADATA, EXPORT, SPLIT, INSERT_SILENCE
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -123,7 +129,7 @@ fun EditorScreen(
     onPickAppendFile: () -> Unit,
     onPickMixFile: () -> Unit,
     onPickCoverImage: (onPicked: (ByteArray, String) -> Unit) -> Unit,
-    onExportSaveAs: (ExportConfig) -> Unit,
+    onExportSaveAs: (ExportConfig, selectionOnly: Boolean) -> Unit,
     pendingMixOverlayName: String? = null,
     onConfirmMixOverlay: (offsetMs: Long, baseGainDb: Float, overlayGainDb: Float) -> Unit = { _, _, _ -> },
     onDismissMixOverlay: () -> Unit = {},
@@ -209,7 +215,43 @@ fun EditorScreen(
                     onZoomChange = { z, sc -> zoom = z; scrollFrac = sc },
                     onSelectionChange = { s, e -> viewModel.updateSelection(s, e) },
                     onSeek = { ms -> viewModel.seekTo(ms) },
+                    chapters = state.chapters,
                 )
+
+                if (state.chapters.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "${stringResource(R.string.editor_chapters_label)} (${state.chapters.size})",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            state.chapters.forEach { ch ->
+                                val isSelected = abs(state.selectionStartMs - ch.startMs) < 50L &&
+                                    abs(state.selectionEndMs - ch.endMs) < 50L
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.selectChapter(ch)
+                                    },
+                                    label = {
+                                        Text(
+                                            text = "${Formatters.formatDurationMs(ch.startMs, includeMillis = false)} · ${ch.title}",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
 
                 // Selection + Zoom Bar
                 Row(
@@ -574,6 +616,15 @@ fun EditorScreen(
                             ToolActionChip(Icons.Rounded.FilterAlt, stringResource(R.string.effect_filter_gate)) {
                                 activeSheet = ActiveSheet.FILTER_GATE
                             }
+                            ToolActionChip(Icons.Rounded.Compress, stringResource(R.string.effect_compressor)) {
+                                activeSheet = ActiveSheet.COMPRESSOR
+                            }
+                            ToolActionChip(Icons.Rounded.SurroundSound, stringResource(R.string.effect_reverb)) {
+                                activeSheet = ActiveSheet.REVERB
+                            }
+                            ToolActionChip(Icons.Rounded.Speaker, stringResource(R.string.effect_stereo_bass)) {
+                                activeSheet = ActiveSheet.STEREO_BASS
+                            }
                             ToolActionChip(Icons.Rounded.SwapHoriz, stringResource(R.string.effect_reverse)) {
                                 viewModel.reverseSelection()
                             }
@@ -673,6 +724,32 @@ fun EditorScreen(
             onLiveDspChange = { viewModel.updateLiveDspPreview(it) },
             onStopPreview = { viewModel.stopEffectPreview() },
         )
+        ActiveSheet.COMPRESSOR -> CompressorSheet(
+            onDismiss = { activeSheet = ActiveSheet.NONE },
+            onApply = { thr, ratio, atk, rel, makeup ->
+                viewModel.applyCompressor(thr, ratio, atk, rel, makeup)
+            },
+            isPlaying = state.isPlaying,
+            onTogglePreview = { viewModel.toggleEffectPreviewPlayback() },
+            onLiveDspChange = { viewModel.updateLiveDspPreview(it) },
+            onStopPreview = { viewModel.stopEffectPreview() },
+        )
+        ActiveSheet.REVERB -> ReverbEchoSheet(
+            onDismiss = { activeSheet = ActiveSheet.NONE },
+            onApply = { delay, fb, damp, wet -> viewModel.applyReverb(delay, fb, damp, wet) },
+            isPlaying = state.isPlaying,
+            onTogglePreview = { viewModel.toggleEffectPreviewPlayback() },
+            onLiveDspChange = { viewModel.updateLiveDspPreview(it) },
+            onStopPreview = { viewModel.stopEffectPreview() },
+        )
+        ActiveSheet.STEREO_BASS -> StereoBassSheet(
+            onDismiss = { activeSheet = ActiveSheet.NONE },
+            onApply = { width, bass -> viewModel.applyStereoAndBass(width, bass) },
+            isPlaying = state.isPlaying,
+            onTogglePreview = { viewModel.toggleEffectPreviewPlayback() },
+            onLiveDspChange = { viewModel.updateLiveDspPreview(it) },
+            onStopPreview = { viewModel.stopEffectPreview() },
+        )
         ActiveSheet.CHANNELS -> ChannelSheet(
             onDismiss = { activeSheet = ActiveSheet.NONE },
             onApply = { viewModel.applyChannelOperation(it) },
@@ -692,11 +769,15 @@ fun EditorScreen(
         ActiveSheet.EXPORT -> ExportSheet(
             info = info,
             durationMs = state.durationMs,
+            selectionStartMs = state.selectionStartMs,
+            selectionEndMs = state.selectionEndMs,
             metadata = state.metadata,
             isLosslessOpusReady = state.isLosslessOpusReady,
             defaultFormat = defaultExportFormat,
             defaultBitrateKbps = defaultBitrateKbps,
-            onExportToMusic = { cfg, share -> viewModel.exportToMusic(cfg, share) },
+            onExportToMusic = { cfg, share, targetType, assignDefault, selectionOnly ->
+                viewModel.exportToMusic(cfg, share, targetType, assignDefault, selectionOnly)
+            },
             onExportSaveAs = onExportSaveAs,
             onDismiss = { activeSheet = ActiveSheet.NONE },
         )

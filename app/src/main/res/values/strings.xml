@@ -339,4 +339,61 @@
     <string name="converter_samplerate_original">Original</string>
     <string name="converter_samplerate_opus_note">Opus always encodes at standard 48 kHz</string>
     <string name="converter_wav_depth_label">WAV Bit Depth</string>
+
+    <!-- Ringtone / Export Target & Selection -->
+    <string name="export_target_label">Save To</string>
+    <string name="export_target_music">Music</string>
+    <string name="export_target_ringtone">Ringtone</string>
+    <string name="export_target_notification">Notification</string>
+    <string name="export_target_alarm">Alarm</string>
+    <string name="export_assign_default_tone">Set as system default after saving</string>
+    <string name="export_ringtone_compat_note">Defaulted to M4A (AAC) for phone ringtone compatibility</string>
+    <string name="export_range_label">Export Range</string>
+    <string name="export_range_full">Full Track</string>
+    <string name="export_range_selection">Selection (%1$s)</string>
+    <string name="export_save_to_target">Save to %1$s</string>
+    <string name="export_save_and_set_default">Save &amp; Set Default</string>
+    <string name="export_ringtone_assigned">Set as default: %1$s</string>
+    <string name="export_ringtone_grant_perm">Grant permission to set default system sound</string>
+
+    <!-- Downloader Search, Metadata Override & Chapters -->
+    <string name="download_search_action">Search</string>
+    <string name="download_searching">Searching…</string>
+    <string name="download_search_results_title">Search Results (%1$d)</string>
+    <string name="download_meta_edit_toggle">Edit Tags &amp; Cover Before Download</string>
+    <string name="download_meta_title_label">File &amp; Track Title</string>
+    <string name="download_meta_artist_label">Artist</string>
+    <string name="download_meta_album_label">Album</string>
+    <string name="download_meta_embed_cover">Embed cover art into file</string>
+    <string name="download_chapters_count">%1$d Chapters</string>
+    <string name="download_prop_chapters">Chapters</string>
+    <string name="editor_chapters_label">Chapters</string>
+
+    <!-- AudioLab DSP Effects -->
+    <string name="effect_compressor">Compressor</string>
+    <string name="effect_reverb">Reverb / Echo</string>
+    <string name="effect_stereo_bass">Stereo &amp; Bass</string>
+    <string name="comp_preset_gentle">Gentle</string>
+    <string name="comp_preset_vocal">Vocal</string>
+    <string name="comp_preset_podcast">Podcast</string>
+    <string name="comp_preset_punchy">Punchy</string>
+    <string name="comp_threshold_label">Threshold: %1$.0f dB</string>
+    <string name="comp_ratio_label">Ratio: %1$.1f:1</string>
+    <string name="comp_attack_label">Attack: %1$.0f ms</string>
+    <string name="comp_release_label">Release: %1$.0f ms</string>
+    <string name="comp_makeup_label">Makeup Gain: +%1$.1f dB</string>
+    <string name="reverb_preset_room">Small Room</string>
+    <string name="reverb_preset_hall">Concert Hall</string>
+    <string name="reverb_preset_plate">Studio Plate</string>
+    <string name="reverb_preset_echo">Echo Delay</string>
+    <string name="reverb_delay_label">Delay / Room Size: %1$.0f ms</string>
+    <string name="reverb_feedback_label">Decay / Feedback: %1$d%%</string>
+    <string name="reverb_damping_label">Warm Damping: %1$d%%</string>
+    <string name="reverb_wet_label">Wet Mix: %1$d%%</string>
+    <string name="stereo_preset_mono">Focused</string>
+    <string name="stereo_preset_warm">Warm Bass</string>
+    <string name="stereo_preset_wide">Wide Stage</string>
+    <string name="stereo_preset_club">Club</string>
+    <string name="stereo_width_label">Stereo Width: %1$d%%</string>
+    <string name="bass_boost_label">Bass Boost: +%1$.1f dB</string>
 </resources>

@@ -34,6 +34,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.libreopus.app.data.Formatters
+import com.libreopus.audio.api.MediaChapter
 import com.libreopus.audio.api.WaveformPyramid
 import kotlin.math.abs
 import kotlin.math.max
@@ -54,6 +55,7 @@ fun WaveformCanvas(
     onSelectionChange: (startMs: Long, endMs: Long) -> Unit,
     onSeek: (ms: Long) -> Unit,
     modifier: Modifier = Modifier,
+    chapters: List<MediaChapter> = emptyList(),
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
@@ -70,6 +72,7 @@ fun WaveformCanvas(
     val selectionTint = colorScheme.primaryContainer.copy(alpha = 0.28f)
     val handleColor = colorScheme.tertiary
     val playheadColor = colorScheme.error
+    val chapterColor = colorScheme.secondary.copy(alpha = 0.78f)
 
     val handleHitRadiusPx = with(density) { 26.dp.toPx() }
     val rulerHeightPx = with(density) { 24.dp.toPx() }
@@ -264,6 +267,29 @@ fun WaveformCanvas(
                             color = if (inSelection) selectedRmsColor else rmsColor,
                             topLeft = Offset(x, centerY - rH),
                             size = Size(barWidthPx, rH * 2f),
+                        )
+                    }
+                }
+            }
+
+            // 3.5 Chapter Marker Cues
+            if (chapters.isNotEmpty()) {
+                val chapterDash = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))
+                for (ch in chapters) {
+                    if (ch.startMs <= 0L || ch.startMs >= safeDuration) continue
+                    val chX = msToX(ch.startMs, w)
+                    if (chX in 0f..w) {
+                        drawLine(
+                            color = chapterColor,
+                            start = Offset(chX, rulerHeightPx),
+                            end = Offset(chX, h),
+                            strokeWidth = 2f,
+                            pathEffect = chapterDash,
+                        )
+                        drawCircle(
+                            color = chapterColor,
+                            radius = 4.5f,
+                            center = Offset(chX, rulerHeightPx - 3f),
                         )
                     }
                 }

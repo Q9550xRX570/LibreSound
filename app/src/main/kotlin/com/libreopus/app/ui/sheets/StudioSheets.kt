@@ -55,11 +55,14 @@ import androidx.compose.ui.unit.dp
 import com.libreopus.app.R
 import com.libreopus.app.data.Formatters
 import com.libreopus.dsp.effects.ChannelOperation
+import com.libreopus.dsp.effects.CompressorPreset
 import com.libreopus.dsp.effects.EqPreset
 import com.libreopus.dsp.effects.EqualizerProcessor
 import com.libreopus.dsp.effects.FadeCurve
 import com.libreopus.dsp.effects.FadeProcessor
 import com.libreopus.dsp.effects.LiveDspConfig
+import com.libreopus.dsp.effects.ReverbPreset
+import com.libreopus.dsp.effects.StereoBassPreset
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -755,3 +758,349 @@ fun InsertSilenceDialog(
         },
     )
 }
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun CompressorSheet(
+    onDismiss: () -> Unit,
+    onApply: (thresholdDb: Float, ratio: Float, attackMs: Float, releaseMs: Float, makeupDb: Float) -> Unit,
+    isPlaying: Boolean = false,
+    onTogglePreview: () -> Unit = {},
+    onLiveDspChange: (LiveDspConfig) -> Unit = {},
+    onStopPreview: () -> Unit = {},
+) {
+    var thresholdDb by remember { mutableFloatStateOf(-18f) }
+    var ratio by remember { mutableFloatStateOf(3.5f) }
+    var attackMs by remember { mutableFloatStateOf(10f) }
+    var releaseMs by remember { mutableFloatStateOf(120f) }
+    var makeupDb by remember { mutableFloatStateOf(3.5f) }
+    var selectedPreset by remember { mutableStateOf<CompressorPreset?>(CompressorPreset.VOCAL) }
+    var isBypassed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(thresholdDb, ratio, attackMs, releaseMs, makeupDb, isBypassed) {
+        onLiveDspChange(
+            LiveDspConfig(
+                compEnabled = true,
+                compThresholdDb = thresholdDb,
+                compRatio = ratio,
+                compAttackMs = attackMs,
+                compReleaseMs = releaseMs,
+                compMakeupDb = makeupDb,
+                bypass = isBypassed,
+            ),
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose { onStopPreview() }
+    }
+
+    ModalBottomSheet(onDismissRequest = { onStopPreview(); onDismiss() }) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(stringResource(R.string.effect_compressor), style = MaterialTheme.typography.headlineSmall)
+
+            LivePreviewBar(
+                isPlaying = isPlaying,
+                isBypassed = isBypassed,
+                onTogglePlay = onTogglePreview,
+                onToggleBypass = { isBypassed = !isBypassed },
+            )
+
+            val presets = listOf(
+                CompressorPreset.GENTLE to stringResource(R.string.comp_preset_gentle),
+                CompressorPreset.VOCAL to stringResource(R.string.comp_preset_vocal),
+                CompressorPreset.PODCAST to stringResource(R.string.comp_preset_podcast),
+                CompressorPreset.PUNCHY to stringResource(R.string.comp_preset_punchy),
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                presets.forEach { (preset, label) ->
+                    FilterChip(
+                        selected = selectedPreset == preset,
+                        onClick = {
+                            selectedPreset = preset
+                            thresholdDb = preset.thresholdDb
+                            ratio = preset.ratio
+                            attackMs = preset.attackMs
+                            releaseMs = preset.releaseMs
+                            makeupDb = preset.makeupDb
+                        },
+                        label = { Text(label) },
+                    )
+                }
+            }
+
+            Text(stringResource(R.string.comp_threshold_label, thresholdDb))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = thresholdDb,
+                onValueChange = { selectedPreset = null; thresholdDb = it.roundToInt().toFloat() },
+                valueRange = -40f..0f,
+            )
+
+            Text(stringResource(R.string.comp_ratio_label, ratio))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = ratio,
+                onValueChange = { selectedPreset = null; ratio = (it * 2f).roundToInt() / 2f },
+                valueRange = 1.5f..12f,
+            )
+
+            Text(stringResource(R.string.comp_attack_label, attackMs))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = attackMs,
+                onValueChange = { selectedPreset = null; attackMs = it.roundToInt().toFloat() },
+                valueRange = 1f..50f,
+            )
+
+            Text(stringResource(R.string.comp_release_label, releaseMs))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = releaseMs,
+                onValueChange = { selectedPreset = null; releaseMs = (it / 10f).roundToInt() * 10f },
+                valueRange = 40f..500f,
+            )
+
+            Text(stringResource(R.string.comp_makeup_label, makeupDb))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = makeupDb,
+                onValueChange = { selectedPreset = null; makeupDb = (it * 2f).roundToInt() / 2f },
+                valueRange = 0f..18f,
+            )
+
+            Button(
+                onClick = {
+                    onStopPreview()
+                    onApply(thresholdDb, ratio, attackMs, releaseMs, makeupDb)
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.apply))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun ReverbEchoSheet(
+    onDismiss: () -> Unit,
+    onApply: (delayMs: Float, feedback: Float, roomDamping: Float, wetMix: Float) -> Unit,
+    isPlaying: Boolean = false,
+    onTogglePreview: () -> Unit = {},
+    onLiveDspChange: (LiveDspConfig) -> Unit = {},
+    onStopPreview: () -> Unit = {},
+) {
+    var delayMs by remember { mutableFloatStateOf(80f) }
+    var feedback by remember { mutableFloatStateOf(0.46f) }
+    var roomDamping by remember { mutableFloatStateOf(0.25f) }
+    var wetMix by remember { mutableFloatStateOf(0.28f) }
+    var selectedPreset by remember { mutableStateOf<ReverbPreset?>(ReverbPreset.STUDIO_PLATE) }
+    var isBypassed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(delayMs, feedback, roomDamping, wetMix, isBypassed) {
+        onLiveDspChange(
+            LiveDspConfig(
+                reverbEnabled = true,
+                reverbDelayMs = delayMs,
+                reverbFeedback = feedback,
+                reverbDamping = roomDamping,
+                reverbWetMix = wetMix,
+                bypass = isBypassed,
+            ),
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose { onStopPreview() }
+    }
+
+    ModalBottomSheet(onDismissRequest = { onStopPreview(); onDismiss() }) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(stringResource(R.string.effect_reverb), style = MaterialTheme.typography.headlineSmall)
+
+            LivePreviewBar(
+                isPlaying = isPlaying,
+                isBypassed = isBypassed,
+                onTogglePlay = onTogglePreview,
+                onToggleBypass = { isBypassed = !isBypassed },
+            )
+
+            val presets = listOf(
+                ReverbPreset.SMALL_ROOM to stringResource(R.string.reverb_preset_room),
+                ReverbPreset.HALL to stringResource(R.string.reverb_preset_hall),
+                ReverbPreset.STUDIO_PLATE to stringResource(R.string.reverb_preset_plate),
+                ReverbPreset.ECHO_DELAY to stringResource(R.string.reverb_preset_echo),
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                presets.forEach { (preset, label) ->
+                    FilterChip(
+                        selected = selectedPreset == preset,
+                        onClick = {
+                            selectedPreset = preset
+                            delayMs = preset.delayMs
+                            feedback = preset.feedback
+                            roomDamping = preset.roomDamping
+                            wetMix = preset.wetMix
+                        },
+                        label = { Text(label) },
+                    )
+                }
+            }
+
+            Text(stringResource(R.string.reverb_delay_label, delayMs))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = delayMs,
+                onValueChange = { selectedPreset = null; delayMs = (it / 5f).roundToInt() * 5f },
+                valueRange = 30f..450f,
+            )
+
+            Text(stringResource(R.string.reverb_feedback_label, (feedback * 100f).roundToInt()))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = feedback,
+                onValueChange = { selectedPreset = null; feedback = (it * 100f).roundToInt() / 100f },
+                valueRange = 0.05f..0.75f,
+            )
+
+            Text(stringResource(R.string.reverb_damping_label, (roomDamping * 100f).roundToInt()))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = roomDamping,
+                onValueChange = { selectedPreset = null; roomDamping = (it * 100f).roundToInt() / 100f },
+                valueRange = 0f..0.90f,
+            )
+
+            Text(stringResource(R.string.reverb_wet_label, (wetMix * 100f).roundToInt()))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = wetMix,
+                onValueChange = { selectedPreset = null; wetMix = (it * 100f).roundToInt() / 100f },
+                valueRange = 0.05f..0.60f,
+            )
+
+            Button(
+                onClick = {
+                    onStopPreview()
+                    onApply(delayMs, feedback, roomDamping, wetMix)
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.apply))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun StereoBassSheet(
+    onDismiss: () -> Unit,
+    onApply: (width: Float, bassBoostDb: Float) -> Unit,
+    isPlaying: Boolean = false,
+    onTogglePreview: () -> Unit = {},
+    onLiveDspChange: (LiveDspConfig) -> Unit = {},
+    onStopPreview: () -> Unit = {},
+) {
+    var width by remember { mutableFloatStateOf(1.10f) }
+    var bassBoostDb by remember { mutableFloatStateOf(4.5f) }
+    var selectedPreset by remember { mutableStateOf<StereoBassPreset?>(StereoBassPreset.WARM_BASS) }
+    var isBypassed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(width, bassBoostDb, isBypassed) {
+        onLiveDspChange(
+            LiveDspConfig(
+                stereoWidth = width,
+                bassBoostDb = bassBoostDb,
+                bypass = isBypassed,
+            ),
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose { onStopPreview() }
+    }
+
+    ModalBottomSheet(onDismissRequest = { onStopPreview(); onDismiss() }) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(stringResource(R.string.effect_stereo_bass), style = MaterialTheme.typography.headlineSmall)
+
+            LivePreviewBar(
+                isPlaying = isPlaying,
+                isBypassed = isBypassed,
+                onTogglePlay = onTogglePreview,
+                onToggleBypass = { isBypassed = !isBypassed },
+            )
+
+            val presets = listOf(
+                StereoBassPreset.FOCUSED_MONO to stringResource(R.string.stereo_preset_mono),
+                StereoBassPreset.WARM_BASS to stringResource(R.string.stereo_preset_warm),
+                StereoBassPreset.WIDE_STAGE to stringResource(R.string.stereo_preset_wide),
+                StereoBassPreset.CLUB_BOOST to stringResource(R.string.stereo_preset_club),
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                presets.forEach { (preset, label) ->
+                    FilterChip(
+                        selected = selectedPreset == preset,
+                        onClick = {
+                            selectedPreset = preset
+                            width = preset.width
+                            bassBoostDb = preset.bassBoostDb
+                        },
+                        label = { Text(label) },
+                    )
+                }
+            }
+
+            Text(stringResource(R.string.stereo_width_label, (width * 100f).roundToInt()))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = width,
+                onValueChange = { selectedPreset = null; width = (it * 20f).roundToInt() / 20f },
+                valueRange = 0f..2f,
+            )
+
+            Text(stringResource(R.string.bass_boost_label, bassBoostDb))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = bassBoostDb,
+                onValueChange = { selectedPreset = null; bassBoostDb = (it * 2f).roundToInt() / 2f },
+                valueRange = 0f..9f,
+            )
+
+            Button(
+                onClick = {
+                    onStopPreview()
+                    onApply(width, bassBoostDb)
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.apply))
+            }
+        }
+    }
+}
+

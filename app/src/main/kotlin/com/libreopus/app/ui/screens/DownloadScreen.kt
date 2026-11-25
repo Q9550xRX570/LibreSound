@@ -52,6 +52,7 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Replay
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Tune
@@ -117,6 +118,7 @@ import com.libreopus.app.downloader.YtDlpErrorKind
 import com.libreopus.app.viewmodel.DownloadUiState
 import com.libreopus.app.viewmodel.DownloadViewModel
 import com.libreopus.audio.api.AudioMetadata
+import com.libreopus.audio.api.MediaChapter
 import java.io.File
 import kotlinx.coroutines.launch
 
@@ -131,6 +133,7 @@ private data class MediaPropertiesPayload(
     val sizeBytes: Long = 0L,
     val savedPath: String = "",
     val sourceUrl: String = "",
+    val chapters: List<MediaChapter> = emptyList(),
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -139,11 +142,18 @@ fun DownloadScreen(
     state: DownloadUiState,
     viewModel: DownloadViewModel,
     hasActiveEditorSession: Boolean,
-    onOpenInEditor: (audioFile: File, displayName: String, coverFile: File?, coverMime: String?, metadata: AudioMetadata?) -> Unit,
+    onOpenInEditor: (
+        audioFile: File,
+        displayName: String,
+        coverFile: File?,
+        coverMime: String?,
+        metadata: AudioMetadata?,
+        chapters: List<MediaChapter>,
+    ) -> Unit,
     onUseAsCover: (imageFile: File, mimeType: String) -> Unit,
     onShareFile: (file: File, mimeType: String) -> Unit,
     modifier: Modifier = Modifier,
-    onOpenHistoryUri: (uriString: String) -> Unit = {},
+    onOpenHistoryUri: (uriString: String, chapters: List<MediaChapter>) -> Unit = { _, _ -> },
     onShareHistoryUri: (uriString: String, mimeType: String) -> Unit = { _, _ -> },
     onShowMessage: (String) -> Unit = {},
 ) {
@@ -192,6 +202,11 @@ fun DownloadScreen(
         state.noCheckCertificates,
         state.writeSubtitles,
         state.proxyUrl,
+        state.editTitle,
+        state.editArtist,
+        state.editAlbum,
+        state.embedCover,
+        state.preview,
     ) {
         state.toExecutionOptions(
             cookieFile = if (state.activeCookiePathOrNull) File("/cookies.txt") else null,
@@ -247,18 +262,24 @@ fun DownloadScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    val isSearchInput = PresetCommandBuilder.isSearchQuery(state.url)
                     FilledTonalButton(
                         onClick = { viewModel.fetchPreview() },
                         enabled = state.url.isNotBlank() && !state.isRunning && !state.isFetchingPreview,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(
+                            if (isSearchInput) Icons.Rounded.Search else Icons.Rounded.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            if (state.isFetchingPreview) {
-                                stringResource(R.string.download_fetching_info)
-                            } else {
-                                stringResource(R.string.download_fetch_info)
+                            when {
+                                state.isFetchingPreview && isSearchInput -> stringResource(R.string.download_searching)
+                                state.isFetchingPreview -> stringResource(R.string.download_fetching_info)
+                                isSearchInput -> stringResource(R.string.download_search_action)
+                                else -> stringResource(R.string.download_fetch_info)
                             },
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -283,220 +304,387 @@ fun DownloadScreen(
             }
         }
 
-        // Preview + Format Picker / Playlist Preview Card (YTDLnis style with cover & properties)
+        // Preview + Format Picker / Search Results / Playlist Preview Card
         val preview = state.preview
         if (preview != null) {
-            item {
-                val thumbPath = state.previewThumbnailPath
-                val thumbBmp = remember(thumbPath) {
-                    thumbPath?.let { p ->
-                        runCatching { BitmapFactory.decodeFile(p)?.asImageBitmap() }.getOrNull()
-                    }
-                }
-                OutlinedCard(
-                    colors = CardDefaults.outlinedCardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+            if (preview.isSearchResults) {
+                item {
+                    OutlinedCard(
+                        colors = CardDefaults.outlinedCardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(186.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            if (thumbBmp != null) {
-                                Image(
-                                    bitmap = thumbBmp,
-                                    contentDescription = preview.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = if (preview.isPlaylist) {
-                                        Icons.AutoMirrored.Rounded.PlaylistPlay
-                                    } else {
-                                        Icons.Rounded.AudioFile
-                                    },
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier
-                                        .size(52.dp)
-                                        .align(Alignment.Center),
-                                )
-                            }
-
-                            preview.extractor?.takeIf { it.isNotBlank() }?.let { extName ->
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color.Black.copy(alpha = 0.72f),
-                                    modifier = Modifier
-                                        .align(Alignment.BottomStart)
-                                        .padding(8.dp),
-                                ) {
-                                    Text(
-                                        text = extName,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    )
-                                }
-                            }
-
-                            val rightBadge = when {
-                                preview.isPlaylist -> stringResource(R.string.playlist_count_badge, preview.playlistCount)
-                                preview.durationSec > 0 -> Formatters.formatDurationMs(
-                                    preview.durationSec * 1000L,
-                                    includeMillis = false,
-                                )
-                                else -> ""
-                            }
-                            if (rightBadge.isNotBlank()) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color.Black.copy(alpha = 0.78f),
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .padding(8.dp),
-                                ) {
-                                    Text(
-                                        text = rightBadge,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    )
-                                }
-                            }
-                        }
-
-                        Text(
-                            text = preview.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-
-                        if (preview.uploader.isNotBlank()) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 Icon(
-                                    Icons.Rounded.Person,
+                                    Icons.Rounded.Search,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
                                 )
                                 Text(
-                                    text = preview.uploader,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                                    text = stringResource(
+                                        R.string.download_search_results_title,
+                                        preview.playlistEntries.size,
+                                    ),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
                                 )
                             }
-                        }
-
-                        val previewBadges = buildList {
-                            preview.audioExt?.takeIf { it.isNotBlank() }?.let { add(it.uppercase()) }
-                            if (preview.approxFileSizeBytes > 0L) {
-                                add("~${Formatters.formatBytes(preview.approxFileSizeBytes)}")
+                            preview.playlistEntries.take(8).forEach { entry ->
+                                val durText = if (entry.durationSec > 0) {
+                                    Formatters.formatDurationMs(entry.durationSec * 1000L, includeMillis = false)
+                                } else {
+                                    ""
+                                }
+                                Surface(
+                                    onClick = { viewModel.selectSearchResult(entry.url) },
+                                    enabled = entry.url.isNotBlank() && !state.isRunning,
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    tonalElevation = 1.dp,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(MaterialTheme.colorScheme.primaryContainer),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.AudioFile,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.size(22.dp),
+                                            )
+                                        }
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                                        ) {
+                                            Text(
+                                                text = entry.title,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                            val subLine = listOfNotNull(
+                                                entry.uploader.takeIf { it.isNotBlank() },
+                                                durText.takeIf { it.isNotBlank() },
+                                            ).joinToString(" • ")
+                                            if (subLine.isNotBlank()) {
+                                                Text(
+                                                    text = subLine,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            val bestRate = preview.formats.firstOrNull { it.isAudioOnly }?.let { maxOf(it.abrKbps, it.tbrKbps) } ?: 0
-                            if (bestRate > 0) add("${bestRate} kbps")
                         }
-                        if (previewBadges.isNotEmpty()) {
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                    }
+                }
+            } else {
+                item {
+                    val thumbPath = state.previewThumbnailPath
+                    val thumbBmp = remember(thumbPath) {
+                        thumbPath?.let { p ->
+                            runCatching { BitmapFactory.decodeFile(p)?.asImageBitmap() }.getOrNull()
+                        }
+                    }
+                    var showPreEditMeta by remember(preview.webpageUrl) { mutableStateOf(false) }
+
+                    OutlinedCard(
+                        colors = CardDefaults.outlinedCardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(186.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                             ) {
-                                previewBadges.forEach { badge ->
+                                if (thumbBmp != null) {
+                                    Image(
+                                        bitmap = thumbBmp,
+                                        contentDescription = preview.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = if (preview.isPlaylist) {
+                                            Icons.AutoMirrored.Rounded.PlaylistPlay
+                                        } else {
+                                            Icons.Rounded.AudioFile
+                                        },
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .align(Alignment.Center),
+                                    )
+                                }
+
+                                preview.extractor?.takeIf { it.isNotBlank() }?.let { extName ->
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.secondaryContainer,
+                                        color = Color.Black.copy(alpha = 0.72f),
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .padding(8.dp),
                                     ) {
                                         Text(
-                                            text = badge,
+                                            text = extName,
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                    }
+                                }
+
+                                val rightBadge = when {
+                                    preview.isPlaylist -> stringResource(R.string.playlist_count_badge, preview.playlistCount)
+                                    preview.durationSec > 0 -> Formatters.formatDurationMs(
+                                        preview.durationSec * 1000L,
+                                        includeMillis = false,
+                                    )
+                                    else -> ""
+                                }
+                                if (rightBadge.isNotBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color.Black.copy(alpha = 0.78f),
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(8.dp),
+                                    ) {
+                                        Text(
+                                            text = rightBadge,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.White,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                         )
                                     }
                                 }
                             }
-                        }
 
-                        if (preview.isPlaylist && preview.playlistEntries.isNotEmpty()) {
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                preview.playlistEntries.take(5).forEach { entry ->
+                            Text(
+                                text = state.editTitle.ifBlank { preview.title },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+
+                            if (preview.uploader.isNotBlank() || state.editArtist.isNotBlank()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Person,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp),
+                                    )
                                     Text(
-                                        text = "${entry.index}. ${entry.title}",
+                                        text = state.editArtist.ifBlank { preview.uploader },
                                         style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                             }
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                listOf("1-5", "1-10", "1-25", "").forEach { range ->
-                                    FilterChip(
-                                        selected = state.playlistItems == range,
-                                        onClick = { viewModel.setPlaylistItems(range) },
-                                        label = { Text(if (range.isEmpty()) "Tümü / All" else range) },
-                                    )
-                                }
-                            }
-                        }
 
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            if (preview.formats.isNotEmpty()) {
-                                FilledTonalButton(
-                                    onClick = { showFormatSheet = true },
-                                    enabled = !state.isRunning,
-                                ) {
-                                    Text(stringResource(R.string.formats_pick_button, preview.formats.size))
+                            val previewBadges = buildList {
+                                preview.audioExt?.takeIf { it.isNotBlank() }?.let { add(it.uppercase()) }
+                                if (preview.approxFileSizeBytes > 0L) {
+                                    add("~${Formatters.formatBytes(preview.approxFileSizeBytes)}")
+                                }
+                                val bestRate = preview.formats.firstOrNull { it.isAudioOnly }?.let { maxOf(it.abrKbps, it.tbrKbps) } ?: 0
+                                if (bestRate > 0) add("${bestRate} kbps")
+                                if (preview.chapters.isNotEmpty()) {
+                                    add(stringResource(R.string.download_chapters_count, preview.chapters.size))
                                 }
                             }
-                            OutlinedButton(
-                                onClick = {
-                                    activeProperties = MediaPropertiesPayload(
-                                        title = preview.title,
-                                        coverPath = state.previewThumbnailPath,
-                                        artist = preview.uploader,
-                                        durationSec = preview.durationSec,
-                                        formatLabel = listOfNotNull(
-                                            preview.audioExt?.uppercase(),
-                                            preview.extractor,
-                                        ).joinToString(" • "),
-                                        sizeBytes = preview.approxFileSizeBytes,
-                                        sourceUrl = preview.webpageUrl ?: state.url.trim(),
-                                    )
-                                },
-                            ) {
-                                Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(stringResource(R.string.download_properties_action))
+                            if (previewBadges.isNotEmpty()) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    previewBadges.forEach { badge ->
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = MaterialTheme.colorScheme.secondaryContainer,
+                                        ) {
+                                            Text(
+                                                text = badge,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
-                            state.selectedFormatId?.let { fid ->
-                                InputChip(
-                                    selected = true,
-                                    onClick = { viewModel.selectFormatId(null) },
-                                    label = { Text("#$fid") },
-                                    trailingIcon = {
-                                        Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+
+                            if (preview.isPlaylist && preview.playlistEntries.isNotEmpty()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    preview.playlistEntries.take(5).forEach { entry ->
+                                        Text(
+                                            text = "${entry.index}. ${entry.title}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    listOf("1-5", "1-10", "1-25", "").forEach { range ->
+                                        FilterChip(
+                                            selected = state.playlistItems == range,
+                                            onClick = { viewModel.setPlaylistItems(range) },
+                                            label = { Text(if (range.isEmpty()) "Tümü / All" else range) },
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Pre-Download Tags & Cover Toggle (single item)
+                            if (!preview.isPlaylist) {
+                                TextButton(
+                                    onClick = { showPreEditMeta = !showPreEditMeta },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                ) {
+                                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(stringResource(R.string.download_meta_edit_toggle))
+                                    Spacer(Modifier.width(4.dp))
+                                    Icon(
+                                        if (showPreEditMeta) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                                AnimatedVisibility(visible = showPreEditMeta) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = state.editTitle,
+                                            onValueChange = { viewModel.setMetaOverrides(title = it) },
+                                            label = { Text(stringResource(R.string.download_meta_title_label)) },
+                                            singleLine = true,
+                                            enabled = !state.isRunning,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        OutlinedTextField(
+                                            value = state.editArtist,
+                                            onValueChange = { viewModel.setMetaOverrides(artist = it) },
+                                            label = { Text(stringResource(R.string.download_meta_artist_label)) },
+                                            singleLine = true,
+                                            enabled = !state.isRunning,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        OutlinedTextField(
+                                            value = state.editAlbum,
+                                            onValueChange = { viewModel.setMetaOverrides(album = it) },
+                                            label = { Text(stringResource(R.string.download_meta_album_label)) },
+                                            singleLine = true,
+                                            enabled = !state.isRunning,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                stringResource(R.string.download_meta_embed_cover),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            Switch(
+                                                checked = state.embedCover,
+                                                onCheckedChange = { viewModel.setMetaOverrides(embedCover = it) },
+                                                enabled = !state.isRunning,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                if (preview.formats.isNotEmpty()) {
+                                    FilledTonalButton(
+                                        onClick = { showFormatSheet = true },
+                                        enabled = !state.isRunning,
+                                    ) {
+                                        Text(stringResource(R.string.formats_pick_button, preview.formats.size))
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        activeProperties = MediaPropertiesPayload(
+                                            title = state.editTitle.ifBlank { preview.title },
+                                            coverPath = state.previewThumbnailPath,
+                                            artist = state.editArtist.ifBlank { preview.artist.ifBlank { preview.uploader } },
+                                            album = state.editAlbum.ifBlank { preview.album },
+                                            durationSec = preview.durationSec,
+                                            formatLabel = listOfNotNull(
+                                                preview.audioExt?.uppercase(),
+                                                preview.extractor,
+                                            ).joinToString(" • "),
+                                            sizeBytes = preview.approxFileSizeBytes,
+                                            sourceUrl = preview.webpageUrl ?: state.url.trim(),
+                                            chapters = preview.chapters,
+                                        )
                                     },
-                                )
+                                ) {
+                                    Icon(Icons.Rounded.Info, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.download_properties_action))
+                                }
+                                state.selectedFormatId?.let { fid ->
+                                    InputChip(
+                                        selected = true,
+                                        onClick = { viewModel.selectFormatId(null) },
+                                        label = { Text("#$fid") },
+                                        trailingIcon = {
+                                            Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -1162,6 +1350,7 @@ fun DownloadScreen(
                                                 res.imageFile,
                                                 res.imageMimeType,
                                                 entry.item.metadata ?: res.metadata,
+                                                entry.item.chapters.ifEmpty { res.chapters },
                                             )
                                         },
                                         modifier = Modifier.weight(1f),
@@ -1192,6 +1381,7 @@ fun DownloadScreen(
                                                 sizeBytes = entry.item.file.length(),
                                                 savedPath = entry.savedPath ?: entry.item.displayName,
                                                 sourceUrl = res.sourceUrl ?: state.url.trim(),
+                                                chapters = entry.item.chapters.ifEmpty { res.chapters },
                                             )
                                         },
                                     ) {
@@ -1398,9 +1588,11 @@ fun DownloadScreen(
                                                     coverFile,
                                                     if (coverFile != null) "image/jpeg" else null,
                                                     restoredMeta,
+                                                    entry.chapters,
                                                 )
                                             }
-                                            !entry.contentUriString.isNullOrBlank() -> onOpenHistoryUri(entry.contentUriString)
+                                            !entry.contentUriString.isNullOrBlank() ->
+                                                onOpenHistoryUri(entry.contentUriString, entry.chapters)
                                             else -> onShowMessage(missingMsg)
                                         }
                                     },
@@ -1434,6 +1626,7 @@ fun DownloadScreen(
                                         sizeBytes = entry.sizeBytes,
                                         savedPath = entry.savedPath,
                                         sourceUrl = entry.sourceUrl,
+                                        chapters = entry.chapters,
                                     )
                                 },
                             ) {
@@ -1897,6 +2090,23 @@ private fun MediaPropertiesSheet(
             }
             payload.sourceUrl.takeIf { it.isNotBlank() }?.let {
                 PropertyRow(stringResource(R.string.download_prop_source), it)
+            }
+            if (payload.chapters.isNotEmpty()) {
+                HorizontalDivider()
+                Text(
+                    text = "${stringResource(R.string.download_prop_chapters)} (${payload.chapters.size})",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                payload.chapters.forEach { ch ->
+                    Text(
+                        text = "${Formatters.formatDurationMs(ch.startMs, includeMillis = false)}  ${ch.title}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

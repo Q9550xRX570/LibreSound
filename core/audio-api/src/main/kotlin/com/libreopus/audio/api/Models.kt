@@ -214,3 +214,10 @@ data class EngineCapabilities(
     val supportedExportFormats: Set<ExportFormat>,
     val supportsLosslessOpus: Boolean,
 )
+
+data class MediaChapter(
+    val title: String,
+    val startMs: Long,
+    val endMs: Long,
+)
+

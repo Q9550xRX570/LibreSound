@@ -136,4 +136,59 @@ class LiveDspProcessorTest {
         }
         assertTrue("Expected low Hermite resampling error (<200), got $maxErr", maxErr < 200)
     }
+
+    @Test
+    fun `live chain processes compressor stereo width reverb and resetState clears reverb tail`() {
+        val sr = 48000
+        val chain = LiveDspChain(sampleRate = sr, channels = 2)
+        chain.updateConfig(
+            LiveDspConfig(
+                compEnabled = true,
+                compThresholdDb = -20f,
+                compRatio = 6f,
+                compMakeupDb = 0f,
+                stereoWidth = 0f,
+                reverbEnabled = false,
+            ),
+        )
+
+        val frames = 2048
+        val burst = ShortArray(frames * 2) { idx ->
+            val f = idx / 2
+            val amp = if (f < 256) (if (idx % 2 == 0) 24000.0 else 6000.0) else 0.0
+            (sin(2.0 * PI * 600.0 * f / sr) * amp).toInt().toShort()
+        }
+        val dryMonoCheck = burst.copyOf()
+        chain.processInterleaved16(dryMonoCheck, frames)
+
+        // With stereoWidth = 0 and reverb disabled, L and R must collapse to identical samples
+        val maxLrDiff = (0 until frames).maxOf { f -> abs(dryMonoCheck[f * 2] - dryMonoCheck[f * 2 + 1]) }
+        assertTrue("Expected L=R mono collapse, got diff=$maxLrDiff", maxLrDiff <= 2)
+
+        chain.updateConfig(
+            LiveDspConfig(
+                compEnabled = true,
+                compThresholdDb = -20f,
+                compRatio = 6f,
+                compMakeupDb = 0f,
+                stereoWidth = 1f,
+                reverbEnabled = true,
+                reverbDelayMs = 80f,
+                reverbFeedback = 0.5f,
+                reverbDamping = 0.3f,
+                reverbWetMix = 0.45f,
+            ),
+        )
+        chain.processInterleaved16(burst, frames)
+
+        // Tail after burst must be non-zero because reverb is active
+        val tailEnergy = (1024 until frames).maxOf { f -> abs(burst[f * 2].toInt()) }
+        assertTrue("Expected live reverb tail > 20, got $tailEnergy", tailEnergy > 20)
+
+        // After resetState, feeding pure zeros must stay pure zeros even with reverb enabled
+        chain.resetState()
+        val silence = ShortArray(frames * 2)
+        chain.processInterleaved16(silence, frames)
+        assertTrue("Expected clean zero silence after resetState()", silence.all { it == 0.toShort() })
+    }
 }

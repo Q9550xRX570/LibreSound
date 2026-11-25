@@ -14,6 +14,19 @@ data class LiveDspConfig(
     val lowPassHz: Float? = null,
     val gateEnabled: Boolean = false,
     val gateThresholdDb: Float = -40f,
+    val compEnabled: Boolean = false,
+    val compThresholdDb: Float = -18f,
+    val compRatio: Float = 4f,
+    val compAttackMs: Float = 10f,
+    val compReleaseMs: Float = 120f,
+    val compMakeupDb: Float = 0f,
+    val reverbEnabled: Boolean = false,
+    val reverbDelayMs: Float = 120f,
+    val reverbFeedback: Float = 0.42f,
+    val reverbDamping: Float = 0.45f,
+    val reverbWetMix: Float = 0.28f,
+    val stereoWidth: Float = 1f,
+    val bassBoostDb: Float = 0f,
     val bypass: Boolean = false,
 ) {
     val hasAnyEffect: Boolean
@@ -21,12 +34,16 @@ data class LiveDspConfig(
             eqBandsDb.any { abs(it) > 0.05f } ||
             highPassHz != null ||
             lowPassHz != null ||
-            gateEnabled
+            gateEnabled ||
+            compEnabled ||
+            (reverbEnabled && reverbWetMix > 0.005f) ||
+            abs(stereoWidth - 1f) > 0.01f ||
+            bassBoostDb > 0.05f
 }
 
 /**
  * Zero-allocation chunk processor for real-time A/B effect auditioning in [AudioPreviewPlayer].
- * Reuses the exact filter math of [EqualizerProcessor] and [FilterAndGateProcessor].
+ * Reuses the exact filter math of [EqualizerProcessor], [FilterAndGateProcessor], and dynamics/space kernels.
  */
 class LiveDspChain(
     private val sampleRate: Int,
@@ -42,6 +59,10 @@ class LiveDspChain(
 
     private var eqFilters: List<BiquadFilter> = emptyList()
     private var passFilters: List<BiquadFilter> = emptyList()
+
+    private val compressorKernel = CompressorKernel(safeSampleRate, safeChannels)
+    private val stereoBassKernel = StereoBassKernel(safeSampleRate, safeChannels)
+    private val reverbKernel = SchroederReverbKernel(safeSampleRate, safeChannels)
 
     // Noise gate envelope state
     private val envAttack = exp((-1.0 / (safeSampleRate * 0.002))).toFloat()
@@ -73,12 +94,38 @@ class LiveDspChain(
             gateGain = 1f
             holdRemaining = 0
         }
+        if (next.compEnabled) {
+            compressorKernel.configure(
+                thresholdDb = next.compThresholdDb,
+                ratio = next.compRatio,
+                attackMs = next.compAttackMs,
+                releaseMs = next.compReleaseMs,
+                makeupDb = next.compMakeupDb,
+            )
+            if (!config.compEnabled) compressorKernel.reset()
+        }
+        stereoBassKernel.configure(
+            width = next.stereoWidth,
+            bassBoostDb = next.bassBoostDb,
+        )
+        if (next.reverbEnabled && next.reverbWetMix > 0.005f) {
+            reverbKernel.configure(
+                delayMs = next.reverbDelayMs,
+                feedback = next.reverbFeedback,
+                roomDamping = next.reverbDamping,
+                wetMix = next.reverbWetMix,
+            )
+            if (!config.reverbEnabled) reverbKernel.reset()
+        }
         config = next
     }
 
     fun resetState() {
         eqFilters.forEach { it.reset() }
         passFilters.forEach { it.reset() }
+        compressorKernel.reset()
+        stereoBassKernel.reset()
+        reverbKernel.reset()
         env = 0f
         gateGain = 1f
         holdRemaining = 0
@@ -148,6 +195,16 @@ class LiveDspChain(
                     floatScratch[base + c] *= gateGain
                 }
             }
+        }
+
+        if (cfg.compEnabled) {
+            compressorKernel.processInPlace(floatScratch, frameCount)
+        }
+        if (abs(cfg.stereoWidth - 1f) > 0.01f || cfg.bassBoostDb > 0.05f) {
+            stereoBassKernel.processInPlace(floatScratch, frameCount)
+        }
+        if (cfg.reverbEnabled && cfg.reverbWetMix > 0.005f) {
+            reverbKernel.processInPlace(floatScratch, frameCount)
         }
 
         for (i in 0 until sampleCount) {

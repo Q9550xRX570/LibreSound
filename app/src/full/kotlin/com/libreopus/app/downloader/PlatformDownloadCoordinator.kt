@@ -171,6 +171,7 @@ private class FullDownloadCoordinator(
                                 year = meta?.year.orEmpty(),
                                 durationSec = media.durationSec,
                                 formatLabel = media.formatLabel,
+                                chapters = media.chapters.ifEmpty { artifact.chapters },
                             ),
                         )
                     }

@@ -169,6 +169,60 @@ class DspProcessorsTest {
         assertTrue(best != null && abs(best.maxPeaks.max()) <= 1.0f)
     }
 
+    @Test
+    fun `compressor reverb and stereo widener with bass boost process accurately`() = runBlocking {
+        val store = DiskPcmStore(tempFolder.newFolder("space_dyn"))
+
+        // 1. Compressor: loud -3 dBFS signal compressed toward -18 dBFS threshold with 6:1 ratio (0 dB makeup)
+        val hot = createSineTimeline(store, freqHz = 1000.0, amplitude = 0.707f, durationSec = 0.6, channels = 1)
+        val compressed = com.libreopus.dsp.effects.CompressorProcessor.apply(
+            hot, store, 0L, hot.totalFrames,
+            thresholdDb = -18f, ratio = 6f, attackMs = 5f, releaseMs = 80f, makeupDb = 0f,
+        )
+        val tailBase = measureRms(hot, 8000L, hot.totalFrames)
+        val tailComp = measureRms(compressed, 8000L, compressed.totalFrames)
+        assertTrue("Expected compressed tail < 0.6x original (orig=$tailBase, comp=$tailComp)", tailComp < tailBase * 0.6f)
+
+        // 2. Reverb: short impulse followed by silence gains non-zero reverberant tail that stays bounded
+        val sr = 48000
+        val impSamples = ShortArray(sr)
+        for (i in 0 until 200) {
+            impSamples[i] = (sin(2.0 * PI * 800.0 * i / sr) * 20000.0).toInt().toShort()
+        }
+        val impFile = store.createChunkFile("imp")
+        store.writePcm16Le(impFile, impSamples)
+        val impTl = EditTimeline.fromSingleFile(sr, 1, impFile, sr.toLong())
+        val reverbed = com.libreopus.dsp.effects.ReverbEchoProcessor.apply(
+            impTl, store, 0L, impTl.totalFrames,
+            delayMs = 80f, feedback = 0.5f, roomDamping = 0.3f, wetMix = 0.45f,
+        )
+        val wetTailRms = measureRms(reverbed, 4000L, 12000L)
+        assertTrue("Expected reverberant tail > 0.005, got $wetTailRms", wetTailRms > 0.005f)
+        val lateTailRms = measureRms(reverbed, 36000L, 48000L)
+        assertTrue("Expected reverb tail decay over time ($lateTailRms < $wetTailRms)", lateTailRms < wetTailRms)
+
+        // 3. Stereo widener: mono mix when width=0, widened L-R difference when width=1.8, bass boost at 60Hz
+        val stereoFrames = 4800
+        val stSamples = ShortArray(stereoFrames * 2)
+        for (f in 0 until stereoFrames) {
+            stSamples[f * 2] = (sin(2.0 * PI * 500.0 * f / sr) * 12000.0).toInt().toShort()
+            stSamples[f * 2 + 1] = (sin(2.0 * PI * 500.0 * f / sr) * 4000.0).toInt().toShort()
+        }
+        val stFile = store.createChunkFile("stereo")
+        store.writePcm16Le(stFile, stSamples)
+        val stTl = EditTimeline.fromSingleFile(sr, 2, stFile, stereoFrames.toLong())
+
+        val collapsed = com.libreopus.dsp.effects.StereoWidenerProcessor.apply(stTl, store, 0L, stTl.totalFrames, width = 0f, bassBoostDb = 0f)
+        val colBuf = ShortArray(200)
+        collapsed.readFrames(100L, colBuf, 0, 100)
+        val maxDiffCollapsed = (0 until 100).maxOf { abs(colBuf[it * 2] - colBuf[it * 2 + 1]) }
+        assertTrue("Width=0 should collapse L/R diff to ~0, got $maxDiffCollapsed", maxDiffCollapsed <= 2)
+
+        val bassTl = createSineTimeline(store, freqHz = 60.0, amplitude = 0.25f, durationSec = 0.5, channels = 1)
+        val boostedBass = com.libreopus.dsp.effects.StereoWidenerProcessor.apply(bassTl, store, 0L, bassTl.totalFrames, width = 1f, bassBoostDb = 8f)
+        assertTrue(measureRms(boostedBass, 4000L, boostedBass.totalFrames) > measureRms(bassTl, 4000L, bassTl.totalFrames) * 1.4f)
+    }
+
     private fun assertEquals(expected: Long, actual: Long, delta: Long) {
         assertTrue("Expected $expected +/- $delta, got $actual", abs(expected - actual) <= delta)
     }

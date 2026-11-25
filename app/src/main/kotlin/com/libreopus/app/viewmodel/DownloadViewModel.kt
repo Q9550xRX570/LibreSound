@@ -81,6 +81,10 @@ data class DownloadUiState(
     val isFetchingPreview: Boolean = false,
     val preview: MediaTrackPreview? = null,
     val previewThumbnailPath: String? = null,
+    val editTitle: String = "",
+    val editArtist: String = "",
+    val editAlbum: String = "",
+    val embedCover: Boolean = true,
     val isRunning: Boolean = false,
     val progress: Float = 0f,
     val etaSeconds: Long = -1L,
@@ -95,26 +99,35 @@ data class DownloadUiState(
     val activeCookiePathOrNull: Boolean
         get() = useCookies && cookieSummary != null
 
-    fun toExecutionOptions(cookieFile: File?): DownloadExecutionOptions = DownloadExecutionOptions(
-        audioPreference = audioPreference,
-        selectedFormatId = selectedFormatId,
-        cookieFilePath = if (useCookies) cookieFile?.absolutePath else null,
-        forceIpv4 = forceIpv4,
-        geoBypass = geoBypass,
-        allowPlaylist = allowPlaylist,
-        playlistItems = playlistItems,
-        filenameTemplate = filenameTemplate,
-        customOutputTemplate = customOutputTemplate,
-        youtubeClient = youtubeClient,
-        extraExtractorArgs = extraExtractorArgs,
-        concurrentFragments = concurrentFragments,
-        rateLimit = rateLimit,
-        noCheckCertificates = noCheckCertificates,
-        writeSubtitles = writeSubtitles,
-        referer = referer,
-        userAgent = userAgent,
-        proxyUrl = proxyUrl,
-    )
+    fun toExecutionOptions(cookieFile: File?): DownloadExecutionOptions {
+        val baseTitle = preview?.title?.trim().orEmpty()
+        val baseArtist = preview?.artist?.trim().orEmpty()
+        val baseAlbum = preview?.album?.trim().orEmpty()
+        return DownloadExecutionOptions(
+            audioPreference = audioPreference,
+            selectedFormatId = selectedFormatId,
+            cookieFilePath = if (useCookies) cookieFile?.absolutePath else null,
+            forceIpv4 = forceIpv4,
+            geoBypass = geoBypass,
+            allowPlaylist = allowPlaylist,
+            playlistItems = playlistItems,
+            filenameTemplate = filenameTemplate,
+            customOutputTemplate = customOutputTemplate,
+            youtubeClient = youtubeClient,
+            extraExtractorArgs = extraExtractorArgs,
+            concurrentFragments = concurrentFragments,
+            rateLimit = rateLimit,
+            noCheckCertificates = noCheckCertificates,
+            writeSubtitles = writeSubtitles,
+            referer = referer,
+            userAgent = userAgent,
+            proxyUrl = proxyUrl,
+            titleOverride = editTitle.trim().takeIf { it.isNotBlank() && it != baseTitle }.orEmpty(),
+            artistOverride = editArtist.trim().takeIf { it.isNotBlank() && it != baseArtist }.orEmpty(),
+            albumOverride = editAlbum.trim().takeIf { it.isNotBlank() && it != baseAlbum }.orEmpty(),
+            embedThumbnailOverride = embedCover,
+        )
+    }
 }
 
 class DownloadViewModel(application: Application) : AndroidViewModel(application) {
@@ -229,6 +242,32 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 preview = if (urlChanged) null else st.preview,
                 previewThumbnailPath = if (urlChanged) null else st.previewThumbnailPath,
                 selectedFormatId = if (urlChanged) null else st.selectedFormatId,
+                editTitle = if (urlChanged) "" else st.editTitle,
+                editArtist = if (urlChanged) "" else st.editArtist,
+                editAlbum = if (urlChanged) "" else st.editAlbum,
+                embedCover = if (urlChanged) true else st.embedCover,
+            )
+        }
+    }
+
+    fun selectSearchResult(entryUrl: String) {
+        if (entryUrl.isBlank()) return
+        setUrl(entryUrl)
+        fetchPreview()
+    }
+
+    fun setMetaOverrides(
+        title: String = _state.value.editTitle,
+        artist: String = _state.value.editArtist,
+        album: String = _state.value.editAlbum,
+        embedCover: Boolean = _state.value.embedCover,
+    ) {
+        _state.update {
+            it.copy(
+                editTitle = title,
+                editArtist = artist,
+                editAlbum = album,
+                embedCover = embedCover,
             )
         }
     }
@@ -514,10 +553,15 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 val execOpts = st.toExecutionOptions(cookieFile)
                 val info = downloader.fetchPreview(ctx, trimmedUrl, execOpts)
                 val status = runCatching { downloader.getEngineStatus(ctx) }.getOrNull()
+                val isListOrSearch = info.isSearchResults || info.isPlaylist
                 _state.update {
                     it.copy(
                         isFetchingPreview = false,
                         preview = info,
+                        editTitle = if (isListOrSearch) "" else info.title,
+                        editArtist = if (isListOrSearch) "" else info.artist,
+                        editAlbum = if (isListOrSearch) "" else info.album,
+                        embedCover = true,
                         engineStatus = status ?: it.engineStatus,
                     )
                 }
@@ -556,10 +600,14 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         val current = _state.value
         val trimmedUrl = current.url.trim()
         if (trimmedUrl.isBlank() || current.isRunning) return
+        if (!com.libreopus.app.downloader.PresetCommandBuilder.isDirectUrl(trimmedUrl)) {
+            fetchPreview()
+            return
+        }
 
         previewJob?.cancel()
         val ctx = getApplication<Application>()
-        val notifTitle = current.preview?.title.orEmpty()
+        val notifTitle = current.editTitle.trim().ifBlank { current.preview?.title.orEmpty() }
 
         viewModelScope.launch {
             _state.update { it.copy(isFetchingPreview = false, errorDiagnostic = null) }
