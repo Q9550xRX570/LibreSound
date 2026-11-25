@@ -1,7 +1,8 @@
 # LibreOpus — Architectural Vision & Agent Handoff Brief
 
 > **Target Audience:** Antigravity agents picking up **LibreOpus** (`LibreSound` test repo) on another workstation.
-> **Workspace Priority (Test Repo):** This repository is a live test & mobile vibe-coding workspace. Focus on the **working Android app, features, APK builds, and tests** — do not spend turns polishing `README.md`, store copy, or ancillary documentation unless explicitly requested.
+> **Workspace Priority (Test Repo):** This repository is a live test & mobile vibe-coding workspace. Focus on the **working Android app, features, and fast verification** — do not spend turns polishing `README.md`, store copy, or ancillary documentation unless explicitly requested.
+> **Build & Quota Rule (CI-First — Mandatory):** Do **NOT** run APK assembly tasks (`assemble*Release`, `assemble*Preview`, `assemble*Debug`) inside the agent VM unless the user explicitly asks for a local APK or you are debugging an R8/packaging failure. Run fast unit tests (and `lint` when resources/manifests/Android APIs change), then `git commit` and `git push` to `main`. **GitHub Actions** (`.github/workflows/android.yml`) builds and uploads `LibreOpus-Preview-APKs` automatically on every push.
 > **Language Note:** The user communicates primarily in **Turkish** (`tr`), and the app maintains full bilingual parity (`values/` English + `values-tr/` Turkish).
 
 ---
