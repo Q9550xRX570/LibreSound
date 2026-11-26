@@ -223,6 +223,95 @@ class DspProcessorsTest {
         assertTrue(measureRms(boostedBass, 4000L, boostedBass.totalFrames) > measureRms(bassTl, 4000L, bassTl.totalFrames) * 1.4f)
     }
 
+    @Test
+    fun `concatenateWithCrossfade merges mixed rate tracks smoothly`() = runBlocking {
+        val store = DiskPcmStore(tempFolder.newFolder("merge"))
+        val t1 = createSineTimeline(store, freqHz = 440.0, amplitude = 0.4f, durationSec = 1.0, sampleRate = 16000, channels = 1)
+        val t2 = createSineTimeline(store, freqHz = 660.0, amplitude = 0.4f, durationSec = 1.0, sampleRate = 48000, channels = 2)
+
+        val merged = UtilityProcessors.concatenateWithCrossfade(
+            readers = listOf(t1, t2),
+            store = store,
+            targetSampleRate = 48000,
+            targetChannels = 2,
+            crossfadeMs = 200L,
+        )
+        assertEquals(48000, merged.sampleRate)
+        assertEquals(2, merged.channels)
+        // Expected ~1.8s = ~86400 frames at 48kHz
+        assertEquals(86400L, merged.totalFrames, 500L)
+        assertTrue(measureRms(merged, 0L, merged.totalFrames) > 0.1f)
+    }
+
+    @Test
+    fun `detectNonSilentRegions identifies spoken bursts while bridging brief internal pauses`() = runBlocking {
+        val store = DiskPcmStore(tempFolder.newFolder("regions"))
+        val sr = 48000
+        // 3s timeline: [0.2..0.7s] + 60ms internal dip + [0.76..1.1s], silence [1.1..1.8s], second burst [1.8..2.4s]
+        val frames = sr * 3
+        val samples = ShortArray(frames) { idx ->
+            val tMs = (idx * 1000L) / sr
+            val active = (tMs in 200L until 700L) || (tMs in 760L until 1100L) || (tMs in 1800L until 2400L)
+            if (active) (sin(2.0 * PI * 440.0 * idx / sr) * 14000.0).toInt().toShort() else 0
+        }
+        val f = store.createChunkFile("seg")
+        store.writePcm16Le(f, samples)
+        val tl = EditTimeline.fromSingleFile(sr, 1, f, frames.toLong())
+
+        val regions = UtilityProcessors.detectNonSilentRegions(
+            reader = tl,
+            thresholdDb = -36f,
+            minSilenceMs = 400,
+            minSegmentMs = 250,
+            paddingMs = 20,
+        )
+        assertEquals("Expected 2 bridged regions, got $regions", 2, regions.size)
+        assertTrue(regions[0].first in 170L..210L && regions[0].second in 1090L..1140L)
+        assertTrue(regions[1].first in 1770L..1810L && regions[1].second in 2390L..2440L)
+    }
+
+    @Test
+    fun `vocalRemoveProcessor suppresses centered vocals while preserving stereo diff and low bass`() = runBlocking {
+        val store = DiskPcmStore(tempFolder.newFolder("vocal"))
+        val sr = 48000
+        val frames = sr / 2
+
+        // Pure centered 1kHz sine (L == R): strong vocal attenuation
+        val centeredMid = createSineTimeline(store, freqHz = 1000.0, amplitude = 0.5f, durationSec = 0.5, sampleRate = sr, channels = 2)
+        val canceled = com.libreopus.dsp.effects.VocalRemoveProcessor.apply(
+            centeredMid, store, 0L, centeredMid.totalFrames,
+            strength = 0.95f, preserveBassHz = 180f,
+        )
+        assertTrue(
+            "Expected strong center mid suppression",
+            measureRms(canceled, 4000L, canceled.totalFrames) < measureRms(centeredMid, 4000L, centeredMid.totalFrames) * 0.25f,
+        )
+
+        // Centered 70 Hz kick/bass: must remain preserved by preserveBassHz=180
+        val centeredBass = createSineTimeline(store, freqHz = 70.0, amplitude = 0.5f, durationSec = 0.5, sampleRate = sr, channels = 2)
+        val bassKept = com.libreopus.dsp.effects.VocalRemoveProcessor.apply(
+            centeredBass, store, 0L, centeredBass.totalFrames,
+            strength = 0.95f, preserveBassHz = 180f,
+        )
+        assertTrue(
+            "Expected 70Hz centered bass preserved (>0.75x)",
+            measureRms(bassKept, 4000L, bassKept.totalFrames) > measureRms(centeredBass, 4000L, centeredBass.totalFrames) * 0.75f,
+        )
+
+        // Anti-phase stereo 1kHz side signal (L = -R): must remain 100% intact
+        val sideBuf = ShortArray(frames * 2)
+        for (i in 0 until frames) {
+            val v = (sin(2.0 * PI * 1000.0 * i / sr) * 14000.0).toInt().toShort()
+            sideBuf[i * 2] = v
+            sideBuf[i * 2 + 1] = (-v).toShort()
+        }
+        val sf = store.createChunkFile("side")
+        store.writePcm16Le(sf, sideBuf)
+        val sideTl = EditTimeline.fromSingleFile(sr, 2, sf, frames.toLong())
+        val sideOut = com.libreopus.dsp.effects.VocalRemoveProcessor.apply(sideTl, store, 0L, sideTl.totalFrames, strength = 1f, preserveBassHz = 180f)
+        assertTrue(measureRms(sideOut, 4000L, sideOut.totalFrames) > measureRms(sideTl, 4000L, sideTl.totalFrames) * 0.9f)
+    }
+
     private fun assertEquals(expected: Long, actual: Long, delta: Long) {
         assertTrue("Expected $expected +/- $delta, got $actual", abs(expected - actual) <= delta)
     }

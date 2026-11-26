@@ -2,8 +2,10 @@
 package com.libreopus.app.ui.sheets
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -17,13 +19,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -46,13 +53,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.libreopus.app.R
+import com.libreopus.app.audio.AudioRecorderHelper
 import com.libreopus.app.data.Formatters
 import com.libreopus.dsp.effects.ChannelOperation
 import com.libreopus.dsp.effects.CompressorPreset
@@ -63,6 +75,11 @@ import com.libreopus.dsp.effects.FadeProcessor
 import com.libreopus.dsp.effects.LiveDspConfig
 import com.libreopus.dsp.effects.ReverbPreset
 import com.libreopus.dsp.effects.StereoBassPreset
+import com.libreopus.dsp.effects.VocalRemovePreset
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -668,19 +685,25 @@ fun MixOverlaySheet(
 fun SplitOptionsSheet(
     playheadMs: Long,
     durationMs: Long,
+    chapterCount: Int,
     onKeepLeft: () -> Unit,
     onKeepRight: () -> Unit,
     onExportBoth: () -> Unit,
+    onDetectSilence: (thresholdDb: Float, minSilenceMs: Int) -> Unit,
+    onExportAllChapters: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val canKeepLeft = playheadMs > 0L
     val canKeepRight = playheadMs < durationMs
     val canSplitInterior = canKeepLeft && canKeepRight
+    var silenceThreshDb by remember { mutableFloatStateOf(-38f) }
+    var minSilenceMs by remember { mutableIntStateOf(500) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -709,6 +732,49 @@ fun SplitOptionsSheet(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.split_export_both))
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            Text(
+                text = stringResource(R.string.split_silence_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(stringResource(R.string.silence_thresh_label, silenceThreshDb))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = silenceThreshDb,
+                onValueChange = { silenceThreshDb = it.roundToInt().toFloat() },
+                valueRange = -60f..-20f,
+            )
+            Text(stringResource(R.string.silence_min_ms_label, minSilenceMs))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = minSilenceMs.toFloat(),
+                onValueChange = { minSilenceMs = ((it / 50f).roundToInt() * 50).coerceIn(200, 2000) },
+                valueRange = 200f..2000f,
+            )
+            FilledTonalButton(
+                onClick = {
+                    onDetectSilence(silenceThreshDb, minSilenceMs)
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.split_detect_silence_btn))
+            }
+            if (chapterCount > 0) {
+                Button(
+                    onClick = {
+                        onExportAllChapters()
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.split_export_all_chapters_btn, chapterCount))
+                }
             }
         }
     }
@@ -1099,6 +1165,301 @@ fun StereoBassSheet(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.apply))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun VocalRemoveSheet(
+    onDismiss: () -> Unit,
+    onApply: (strength: Float, preserveBassHz: Float) -> Unit,
+    isPlaying: Boolean,
+    onTogglePreview: () -> Unit,
+    onLiveDspChange: (LiveDspConfig) -> Unit,
+    onStopPreview: () -> Unit,
+) {
+    var selectedPreset by remember { mutableStateOf<VocalRemovePreset?>(VocalRemovePreset.STANDARD) }
+    var strength by remember { mutableFloatStateOf(VocalRemovePreset.STANDARD.strength) }
+    var preserveBassHz by remember { mutableFloatStateOf(VocalRemovePreset.STANDARD.preserveBassHz) }
+    var isBypassed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isPlaying, isBypassed, strength, preserveBassHz) {
+        if (isPlaying) {
+            onLiveDspChange(
+                LiveDspConfig(
+                    vocalRemoveEnabled = true,
+                    vocalRemoveStrength = strength,
+                    vocalRemoveBassHz = preserveBassHz,
+                    bypass = isBypassed,
+                ),
+            )
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { onStopPreview() }
+    }
+
+    ModalBottomSheet(onDismissRequest = { onStopPreview(); onDismiss() }) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(stringResource(R.string.effect_vocal_remove), style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = stringResource(R.string.vocal_remove_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            LivePreviewBar(
+                isPlaying = isPlaying,
+                isBypassed = isBypassed,
+                onTogglePlay = onTogglePreview,
+                onToggleBypass = { isBypassed = !isBypassed },
+            )
+
+            val presets = listOf(
+                VocalRemovePreset.LIGHT to stringResource(R.string.vocal_preset_light),
+                VocalRemovePreset.STANDARD to stringResource(R.string.vocal_preset_standard),
+                VocalRemovePreset.STRONG to stringResource(R.string.vocal_preset_strong),
+                VocalRemovePreset.PURE_DIFF to stringResource(R.string.vocal_preset_karaoke),
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                presets.forEach { (preset, label) ->
+                    FilterChip(
+                        selected = selectedPreset == preset,
+                        onClick = {
+                            selectedPreset = preset
+                            strength = preset.strength
+                            preserveBassHz = preset.preserveBassHz
+                        },
+                        label = { Text(label) },
+                    )
+                }
+            }
+
+            Text(stringResource(R.string.vocal_strength_label, (strength * 100f).roundToInt()))
+            @Suppress("DEPRECATION")
+            Slider(
+                value = strength,
+                onValueChange = { selectedPreset = null; strength = (it * 20f).roundToInt() / 20f },
+                valueRange = 0.25f..1f,
+            )
+
+            val bassLabel = if (preserveBassHz <= 40f) {
+                stringResource(R.string.vocal_bass_preserve_off)
+            } else {
+                stringResource(R.string.vocal_bass_preserve_hz, preserveBassHz.roundToInt())
+            }
+            Text(bassLabel)
+            @Suppress("DEPRECATION")
+            Slider(
+                value = preserveBassHz,
+                onValueChange = {
+                    selectedPreset = null
+                    preserveBassHz = if (it < 50f) 0f else ((it / 10f).roundToInt() * 10f)
+                },
+                valueRange = 0f..350f,
+            )
+
+            Button(
+                onClick = {
+                    onStopPreview()
+                    onApply(strength, preserveBassHz)
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.apply))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RecorderSheet(
+    onFinished: (file: File, displayName: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val helper = remember { AudioRecorderHelper() }
+    val recState by helper.state.collectAsStateWithLifecycle()
+    val levelHistory = remember { mutableStateListOf<Float>() }
+    var pendingFileName by remember { mutableStateOf("") }
+    var finalizedSuccessfully by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val name = "LibreOpus_Rec_$stamp.wav"
+        pendingFileName = name
+        val recFile = File(File(context.cacheDir, "recordings").apply { mkdirs() }, name)
+        helper.start(recFile)
+    }
+
+    LaunchedEffect(recState.rmsLevel, recState.elapsedMs, recState.isPaused) {
+        if (recState.isRecording && !recState.isPaused) {
+            levelHistory.add(recState.rmsLevel.coerceIn(0.04f, 1f))
+            if (levelHistory.size > 36) levelHistory.removeAt(0)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (!finalizedSuccessfully) {
+                helper.discard()
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = {
+            if (!finalizedSuccessfully) helper.discard()
+            onDismiss()
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Mic,
+                    contentDescription = null,
+                    tint = if (recState.isPaused) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    text = if (recState.isPaused) {
+                        stringResource(R.string.recorder_paused_title)
+                    } else {
+                        stringResource(R.string.recorder_active_title)
+                    },
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+            }
+
+            Text(
+                text = Formatters.formatDurationMs(recState.elapsedMs),
+                style = MaterialTheme.typography.displaySmall,
+            )
+
+            Text(
+                text = stringResource(R.string.recorder_format_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            val barColor = MaterialTheme.colorScheme.primary
+            val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(68.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = MaterialTheme.shapes.medium,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            ) {
+                Canvas(modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                    val bars = 36
+                    val slotW = size.width / bars
+                    val barW = (slotW * 0.62f).coerceAtLeast(3f)
+                    val centerY = size.height / 2f
+                    val startOffset = max(0, bars - levelHistory.size)
+                    for (i in 0 until bars) {
+                        val amp = if (i >= startOffset && (i - startOffset) < levelHistory.size) {
+                            levelHistory[i - startOffset]
+                        } else {
+                            0.05f
+                        }
+                        val barH = (amp * size.height).coerceAtLeast(4f)
+                        val x = i * slotW + (slotW - barW) / 2f
+                        drawRoundRect(
+                            color = if (i >= startOffset) barColor else trackColor,
+                            topLeft = Offset(x, centerY - barH / 2f),
+                            size = Size(barW, barH),
+                            cornerRadius = CornerRadius(barW / 2f, barW / 2f),
+                        )
+                    }
+                }
+            }
+
+            recState.errorMessage?.let { err ->
+                Text(
+                    text = err,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        helper.discard()
+                        onDismiss()
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Rounded.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.recorder_discard), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                FilledTonalButton(
+                    onClick = { helper.togglePause() },
+                    enabled = recState.isRecording,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(
+                        imageVector = if (recState.isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (recState.isPaused) {
+                            stringResource(R.string.recorder_resume)
+                        } else {
+                            stringResource(R.string.recorder_pause)
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            Button(
+                onClick = {
+                    val wavFile = helper.stopAndFinalize()
+                    if (wavFile != null && wavFile.exists()) {
+                        finalizedSuccessfully = true
+                        onFinished(wavFile, pendingFileName.ifBlank { wavFile.name })
+                    }
+                    onDismiss()
+                },
+                enabled = recState.elapsedMs >= 150L,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.recorder_stop_and_edit))
             }
         }
     }

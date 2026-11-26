@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.libreopus.app
 
+import android.Manifest
 import android.app.LocaleManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -29,34 +31,41 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libreopus.app.data.AppLanguage
+import com.libreopus.app.data.Formatters
 import com.libreopus.app.data.MediaStorageHelper
 import com.libreopus.app.data.PreferencesRepository
 import com.libreopus.app.data.UserPreferences
+import com.libreopus.app.downloader.PlatformDownloadFeature
+import com.libreopus.app.downloader.PlatformDownloadHost
 import com.libreopus.app.ui.screens.ConverterScreen
-import com.libreopus.app.ui.screens.DownloadScreen
 import com.libreopus.app.ui.screens.EditorScreen
 import com.libreopus.app.ui.screens.HomeScreen
 import com.libreopus.app.ui.screens.SettingsScreen
+import com.libreopus.app.ui.sheets.RecorderSheet
 import com.libreopus.app.ui.theme.LibreOpusTheme
 import com.libreopus.app.viewmodel.ConverterViewModel
-import com.libreopus.app.viewmodel.DownloadViewModel
 import com.libreopus.app.viewmodel.EditorEvent
 import com.libreopus.app.viewmodel.EditorViewModel
 import com.libreopus.audio.api.ExportConfig
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class TopTab { STUDIO, EDITOR, DOWNLOAD, CONVERTER, SETTINGS }
 
@@ -76,7 +85,7 @@ class MainActivity : ComponentActivity() {
             val prefs by prefsRepo.preferences.collectAsStateWithLifecycle(initialValue = UserPreferences())
             val editorVm: EditorViewModel = viewModel()
             val converterVm: ConverterViewModel = viewModel()
-            val downloadVm: DownloadViewModel = viewModel()
+            val downloadHost = PlatformDownloadFeature.rememberHost()
 
             LibreOpusTheme(
                 themeMode = prefs.themeMode,
@@ -88,7 +97,7 @@ class MainActivity : ComponentActivity() {
                     prefsRepo = prefsRepo,
                     editorVm = editorVm,
                     converterVm = converterVm,
-                    downloadVm = downloadVm,
+                    downloadHost = downloadHost,
                     incomingUri = pendingIncomingUri,
                     incomingUrl = pendingIncomingUrl,
                     onConsumeIncomingUri = { pendingIncomingUri = null },
@@ -147,7 +156,7 @@ private fun LibreOpusAppContent(
     prefsRepo: PreferencesRepository,
     editorVm: EditorViewModel,
     converterVm: ConverterViewModel,
-    downloadVm: DownloadViewModel,
+    downloadHost: PlatformDownloadHost,
     incomingUri: Uri?,
     incomingUrl: String?,
     onConsumeIncomingUri: () -> Unit,
@@ -155,17 +164,19 @@ private fun LibreOpusAppContent(
     onApplyLanguage: (AppLanguage) -> Unit,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     val editorState by editorVm.state.collectAsStateWithLifecycle()
     val converterState by converterVm.state.collectAsStateWithLifecycle()
-    val downloadState by downloadVm.state.collectAsStateWithLifecycle()
 
     var currentTab by remember { mutableStateOf(TopTab.STUDIO) }
     var pendingCoverCallback by remember { mutableStateOf<((ByteArray, String) -> Unit)?>(null) }
     var pendingSaveAsConfig by remember { mutableStateOf<Pair<ExportConfig, Boolean>?>(null) }
     var pendingMixTarget by remember { mutableStateOf<Pair<Uri, String>?>(null) }
+    var showRecorderSheet by remember { mutableStateOf(false) }
+    var cacheSizeBytes by remember { mutableLongStateOf(0L) }
 
     val writeSettingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -228,6 +239,23 @@ private fun LibreOpusAppContent(
         }
     }
 
+    val micDeniedMsg = stringResource(R.string.recorder_permission_denied)
+    val recordAudioPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            showRecorderSheet = true
+        } else {
+            scope.launch { snackbarHostState.showSnackbar(micDeniedMsg) }
+        }
+    }
+
+    LaunchedEffect(currentTab, editorState.hasSession) {
+        cacheSizeBytes = withContext(Dispatchers.IO) {
+            MediaStorageHelper.computeTempCacheSizeBytes(context.cacheDir)
+        }
+    }
+
     LaunchedEffect(incomingUri) {
         if (incomingUri != null) {
             currentTab = TopTab.EDITOR
@@ -236,13 +264,11 @@ private fun LibreOpusAppContent(
         }
     }
 
-    LaunchedEffect(incomingUrl) {
-        if (incomingUrl != null && BuildConfig.HAS_YTDLP) {
-            downloadVm.setUrl(incomingUrl)
-            currentTab = TopTab.DOWNLOAD
-            onConsumeIncomingUrl()
-        }
-    }
+    downloadHost.HandleIncomingUrl(
+        incomingUrl = incomingUrl,
+        onNavigateToDownload = { currentTab = TopTab.DOWNLOAD },
+        onConsumeIncomingUrl = onConsumeIncomingUrl,
+    )
 
     val shareTitle = stringResource(R.string.export_share)
     val missingFileMsg = stringResource(R.string.download_history_file_missing)
@@ -370,13 +396,22 @@ private fun LibreOpusAppContent(
                     onClearRecents = { scope.launch { prefsRepo.clearRecents() } },
                     onOpenConverter = { currentTab = TopTab.CONVERTER },
                     onOpenDownloader = { currentTab = TopTab.DOWNLOAD },
+                    onRecordAudio = {
+                        val granted = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO,
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (granted) {
+                            showRecorderSheet = true
+                        } else {
+                            recordAudioPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
                     modifier = Modifier.padding(innerPadding),
                 )
-                TopTab.DOWNLOAD -> DownloadScreen(
-                    state = downloadState,
-                    viewModel = downloadVm,
+                TopTab.DOWNLOAD -> downloadHost.RenderDownloadTab(
                     hasActiveEditorSession = editorState.hasSession,
-                    onOpenInEditor = { audioFile, displayName, coverFile, coverMime, metadata, chapters ->
+                    onOpenLocalInEditor = { audioFile, displayName, coverFile, coverMime, metadata, chapters ->
                         val coverBytes = coverFile?.takeIf { it.exists() }?.readBytes()
                         currentTab = TopTab.EDITOR
                         editorVm.openLocalFile(audioFile, displayName, coverBytes, coverMime, metadata, chapters)
@@ -470,13 +505,40 @@ private fun LibreOpusAppContent(
                     },
                     onDefaultFormatChange = { f -> scope.launch { prefsRepo.setDefaultExportFormat(f) } },
                     onDefaultBitrateChange = { b -> scope.launch { prefsRepo.setDefaultBitrate(b) } },
+                    cacheSizeBytes = cacheSizeBytes,
+                    onClearCache = {
+                        scope.launch {
+                            val keep = listOfNotNull(editorVm.activeSessionCachePath()).toSet()
+                            val freed = withContext(Dispatchers.IO) {
+                                val bytes = MediaStorageHelper.clearTempCache(context.cacheDir, keepPaths = keep)
+                                cacheSizeBytes = MediaStorageHelper.computeTempCacheSizeBytes(context.cacheDir)
+                                bytes
+                            }
+                            snackbarHostState.showSnackbar(
+                                resources.getString(R.string.settings_cache_cleared, Formatters.formatBytes(freed)),
+                            )
+                        }
+                    },
                     modifier = Modifier.padding(innerPadding),
-                    downloadState = downloadState,
-                    onUpdateChannelChange = { ch -> downloadVm.setUpdateChannel(ch) },
-                    onCheckYtDlpUpdate = { downloadVm.updateEngine() },
+                    ytDlpSettingsSlot = if (BuildConfig.HAS_YTDLP) {
+                        { downloadHost.RenderYtDlpSettingsCard() }
+                    } else {
+                        null
+                    },
                 )
             }
         }
+    }
+
+    if (showRecorderSheet) {
+        RecorderSheet(
+            onFinished = { wavFile, displayName ->
+                showRecorderSheet = false
+                currentTab = TopTab.EDITOR
+                editorVm.openLocalFile(wavFile, displayName)
+            },
+            onDismiss = { showRecorderSheet = false },
+        )
     }
 }
 

@@ -20,8 +20,10 @@
     <string name="home_tool_trim_edit_desc">Sesi kes, seviyeyi ayarla ve etiketleri düzenle</string>
     <string name="home_tool_download">Medya İndirici</string>
     <string name="home_tool_download_desc">yt-dlp ile en iyi ses veya kapak görseli indir</string>
-    <string name="home_tool_converter">Toplu Dönüştürücü</string>
-    <string name="home_tool_converter_desc">Çoklu ses dönüştürme ve videodan ses ayıklama</string>
+    <string name="home_tool_converter">Dönüştür &amp; Birleştir</string>
+    <string name="home_tool_converter_desc">Toplu dönüştür veya yumuşak geçişle birleştir</string>
+    <string name="home_tool_recorder">Stüdyo Ses Kaydedici</string>
+    <string name="home_tool_recorder_desc">48 kHz kayıpsız WAV kaydet ve anında düzenleyicide aç</string>
     <string name="home_recent_files">Son Dosyalar</string>
     <string name="home_recent_empty">Henüz açılmış dosya yok. Başlamak için bir ses veya video dosyası seçin.</string>
     <string name="home_clear_recent">Temizle</string>
@@ -128,9 +130,17 @@
     <string name="export_save_as">Farklı Kaydet…</string>
     <string name="export_share">Paylaş</string>
 
-    <!-- Converter -->
-    <string name="converter_title">Toplu Format Dönüştürücü</string>
-    <string name="converter_subtitle">Çoklu ses dosyalarını çevrimdışı dönüştürün veya videolardan ses ayıklayın.</string>
+    <!-- Converter & Merger -->
+    <string name="converter_title">Dönüştürücü &amp; Birleştirici</string>
+    <string name="converter_subtitle">Çoklu dosyaları çevrimdışı dönüştürün veya isteğe bağlı çapraz geçişle birleştirin.</string>
+    <string name="converter_mode_batch">Toplu Dönüştür</string>
+    <string name="converter_mode_merge">Birleştir + Geçiş</string>
+    <string name="merge_crossfade_label">Çapraz Geçiş Süresi: %1$.2f sn</string>
+    <string name="merge_output_name_label">Birleşik Dosya Adı (isteğe bağlı)</string>
+    <string name="merge_output_name_hint">örn. podcast_mix</string>
+    <string name="merge_need_two_tracks">Birleştirmek için en az 2 parça ekleyin</string>
+    <string name="merge_start">%1$d Parçayı Birleştir ve Music\'e Aktar</string>
+    <string name="merge_done_title">Birleşik Parça Kaydedildi</string>
     <string name="converter_add_files">Ses / Video Dosyası Ekle</string>
     <string name="converter_clear_queue">Listeyi Temizle</string>
     <string name="converter_start">Tümünü Music/LibreOpus\'a Dönüştür</string>
@@ -139,120 +149,9 @@
     <string name="converter_status_done">Tamamlandı</string>
     <string name="converter_status_error">Hata</string>
 
-    <!-- Downloader (full flavor) -->
-    <string name="download_title">Medya İndirici</string>
-    <string name="download_subtitle">yt-dlp\'nin tüm esnekliğiyle en iyi ses, video veya kapak görseli indirin.</string>
-    <string name="download_url_hint">1 veya daha fazla bağlantı yapıştır (satır başına 1)</string>
-    <string name="download_paste">Yapıştır</string>
-    <string name="download_clear">Temizle</string>
-    <string name="download_fetch_info">Bilgi &amp; Formatlar</string>
-    <string name="download_fetching_info">Medya bilgisi alınıyor…</string>
-    <string name="download_audio_format_label">Ses Format Tercihi</string>
-    <string name="download_format_auto">Otomatik En İyi</string>
-    <string name="download_format_opus">WebM (Opus)</string>
-    <string name="download_format_m4a">M4A (AAC)</string>
-    <string name="download_presets_label">İndirme Modları</string>
-    <string name="download_preset_best_audio">En İyi Kalite Ses İndir</string>
-    <string name="download_preset_best_audio_desc">En yüksek kaliteli yerel ses akışını indirir</string>
-    <string name="download_preset_image_only">Sadece Resim İndir</string>
-    <string name="download_preset_image_only_desc">Yalnızca kapak / küçük resmi indirir</string>
-    <string name="download_preset_audio_image">En İyi Ses + Kapak Resmi</string>
-    <string name="download_preset_audio_image_desc">Ses ve kapak görselini indirip stüdyoya hazırlar</string>
-    <string name="download_preset_video_muxed">Video + Ses (MP4 / WebM)</string>
-    <string name="download_preset_video_muxed_desc">Ek FFmpeg şişirmesi olmadan doğrudan oynatılabilir video indirir</string>
-    <string name="download_preset_custom">Özel yt-dlp Komutu</string>
-    <string name="download_preset_custom_desc">Tam CLI kontrolü, hazır şablonlar ve özel bayraklar</string>
-    <string name="download_custom_args_label">yt-dlp parametreleri</string>
-    <string name="download_command_preview">Etkin bayraklar: %1$s</string>
-    <string name="download_customize_command">Komutu Özelleştir</string>
-    <string name="download_templates_label">Komut Şablonları</string>
-    <string name="download_save_template">Şablon Kaydet</string>
-    <string name="download_template_name_hint">Şablon adı (örn. Podcast Opus)</string>
-    <string name="download_start">İndir</string>
-    <string name="download_initializing">yt-dlp ortamı hazırlanıyor…</string>
-    <string name="download_eta">Kalan: %1$dsn</string>
+    <!-- Shared Studio / Actions -->
     <string name="download_open_in_editor">Düzenleyicide Aç</string>
-    <string name="download_extract_to_editor">Sesini Düzenleyicide Aç</string>
-    <string name="download_set_as_cover">Parça Kapağı Yap</string>
-    <string name="download_saved_to">Kaydedildi: %1$s</string>
-    <string name="download_saved_subtitles">Altyazılar kaydedildi (%1$d)</string>
-    <string name="download_logs">Konsol Çıktısı</string>
-
-    <!-- Format & Playlist Picker -->
-    <string name="formats_pick_button">Format Seç (%1$d)</string>
-    <string name="formats_selected_badge">Seçili format: #%1$s (değiştirmek için dokun)</string>
-    <string name="formats_picker_title">Kullanılabilir Akışlar</string>
-    <string name="formats_picker_auto">Otomatik En İyi Kalite</string>
-    <string name="formats_tab_audio">Ses</string>
-    <string name="formats_tab_video">Video + Ses</string>
-    <string name="formats_tab_other">Sadece Video</string>
-    <string name="formats_empty">Bu kategoride akış bulunamadı.</string>
-    <string name="playlist_count_badge">Oynatma Listesi • %1$d öğe</string>
-
-    <!-- Cookies & Network Hardening -->
-    <string name="cookies_title">Çerezler (cookies.txt)</string>
-    <string name="cookies_manage">Yönet</string>
-    <string name="cookies_none">Çerez yüklü değil (isteğe bağlı)</string>
-    <string name="cookies_active_summary">%1$d çerez etkin (%2$s)</string>
-    <string name="cookies_loaded_paused">%1$d çerez yüklü (devre dışı)</string>
-    <string name="cookies_sheet_subtitle">Yaş kısıtlamalı, özel veya bot doğrulaması isteyen bağlantılar için Netscape cookies.txt ya da Cookie-Editor JSON verisi ekleyin. Yalnızca uygulama içinde özel olarak saklanır.</string>
-    <string name="cookies_import_file">Dosyadan İçe Aktar (.txt / .json)</string>
-    <string name="cookies_paste_label">cookies.txt veya JSON yapıştır</string>
-    <string name="cookies_paste_hint"># Netscape HTTP Cookie File…</string>
-    <string name="cookies_save_validate">Doğrula ve Kaydet</string>
-    <string name="cookies_clear">Çerezleri Temizle</string>
-    <string name="cookies_json_converted">JSON çerezleri Netscape biçimine dönüştürüldü (%1$d çerez).</string>
-    <string name="cookies_signin_webview">Uygulama İçinden Giriş Yap (Otomatik cookies.txt)</string>
-    <string name="download_properties_action">Özellikler</string>
-    <string name="download_properties_title">Medya Özellikleri</string>
-    <string name="download_prop_channel">Kanal / Sanatçı</string>
-    <string name="download_prop_album">Albüm</string>
-    <string name="download_prop_year">Yıl</string>
-    <string name="download_prop_duration">Süre</string>
-    <string name="download_prop_format">Biçim / Kodek</string>
-    <string name="download_prop_size">Dosya Boyutu</string>
-    <string name="download_prop_path">Kaydedilen Konum</string>
-    <string name="download_prop_source">Kaynak Bağlantı</string>
     <string name="editor_busy_decoding">Ses çözülüyor</string>
-    <string name="download_advanced_options">Güç, Ağ ve Çıktı Seçenekleri</string>
-    <string name="download_allow_playlist">Oynatma Listesi İndirmeye İzin Ver</string>
-    <string name="download_playlist_items_label">Liste Öğeleri (örn. 1-5 veya 1,3,7)</string>
-    <string name="download_youtube_client_label">YouTube Oynatıcı İstemcisi</string>
-    <string name="download_client_auto">Otomatik</string>
-    <string name="download_filename_template_label">Dosya Adı Şablonu</string>
-    <string name="download_tmpl_title">Başlık</string>
-    <string name="download_tmpl_uploader">Kanal - Başlık</string>
-    <string name="download_tmpl_playlist">Sıra - Başlık</string>
-    <string name="download_tmpl_id">ID</string>
-    <string name="download_tmpl_custom">Özel</string>
-    <string name="download_custom_template_label" formatted="false">Özel -o şablonu (örn. %(title).80B.%(ext)s)</string>
-    <string name="download_concurrent_fragments">Paralel Parça: %1$d</string>
-    <string name="download_write_subs">Altyazıları İndir (tr, en)</string>
-    <string name="download_no_check_certs">SSL Sertifika Hatalarını Yoksay</string>
-    <string name="download_force_ipv4">IPv4 Zorla</string>
-    <string name="download_geo_bypass">Bölge Kilidi Atla</string>
-    <string name="download_rate_limit_label">Hız Sınırı (isteğe bağlı, örn. 2M veya 500K)</string>
-    <string name="download_proxy_label">Proxy URL (isteğe bağlı, örn. socks5://127.0.0.1:9050)</string>
-    <string name="download_user_agent_label">Özel User-Agent (isteğe bağlı)</string>
-    <string name="download_referer_label">Referer URL (isteğe bağlı)</string>
-    <string name="download_extractor_args_label">Ek Extractor Argümanları (isteğe bağlı)</string>
-
-    <!-- Error Diagnostics -->
-    <string name="ytdlp_err_bot_check">YouTube bot/oturum doğrulaması istedi. Oturum açık bir tarayıcıdan cookies.txt ekleyip veya YouTube İstemcisini değiştirip yeniden deneyin.</string>
-    <string name="ytdlp_err_age">Bu medya yaş kısıtlamalı. İndirmek için geçerli tarayıcı çerezlerini etkinleştirin.</string>
-    <string name="ytdlp_err_auth">Bu içerik oturum veya üyelik gerektiriyor. Geçerli çerez dosyası eklemeyi deneyin.</string>
-    <string name="ytdlp_err_403">Sunucu HTTP 403 Yasaklandı hatası döndürdü. YouTube İstemcisini değiştirmeyi, yt-dlp\'yi güncellemeyi, IPv4 Zorla\'yı açmayı veya çerez eklemeyi deneyin.</string>
-    <string name="ytdlp_err_ffmpeg">Bu özel komut FFmpeg gerektiriyor; uygulama boyutunu düşük tutmak için FFmpeg dahil edilmedi. -x olmadan doğrudan bir akış seçin.</string>
-    <string name="ytdlp_err_network">Bağlantı veya zaman aşımı hatası oluştu. İnternetinizi kontrol edin ya da IPv4 Zorla seçeneğini deneyin.</string>
-    <string name="ytdlp_err_unsupported">Bu bağlantı mevcut yt-dlp çıkarıcıları tarafından desteklenmiyor. yt-dlp güncellemesi sorunu çözebilir.</string>
-    <string name="ytdlp_err_extractor_format">Medya çözümleme veya biçim seçimi başarısız oldu. yt-dlp\'yi güncellemek veya farklı bir YouTube istemcisiyle yeniden denemek sorunu çözebilir.</string>
-    <string name="ytdlp_err_unavailable">Bu medya kullanılamıyor, silinmiş veya bölgenizde engellenmiş.</string>
-    <string name="ytdlp_err_generic_retry">İndirme tamamlanamadı. Yeniden Deneyin, yt-dlp\'yi Güncelleyin veya aşağıdaki Teknik Detaylar\'ı inceleyin.</string>
-    <string name="ytdlp_action_retry">Yeniden Dene</string>
-    <string name="ytdlp_action_add_cookies">Çerez Ekle</string>
-    <string name="ytdlp_action_force_ipv4">IPv4 Aç</string>
-    <string name="ytdlp_action_update_engine">yt-dlp Güncelle</string>
-    <string name="ytdlp_show_details">Teknik Detaylar</string>
 
     <!-- Settings & About -->
     <string name="settings_title">Ayarlar &amp; Hakkında</string>
@@ -268,16 +167,11 @@
     <string name="settings_lang_en">English</string>
     <string name="settings_lang_tr">Türkçe</string>
     <string name="settings_defaults">Dışa Aktarma Varsayılanları</string>
-    <string name="settings_ytdlp_title">yt-dlp İndirme Motoru</string>
-    <string name="settings_ytdlp_version">Yüklü sürüm: %1$s</string>
-    <string name="settings_ytdlp_bundled">Paket içi (youtubedl-android 0.18.1)</string>
-    <string name="settings_ytdlp_channel">Güncelleme Kanalı</string>
-    <string name="settings_ytdlp_stable">Kararlı (Stable)</string>
-    <string name="settings_ytdlp_nightly">Gecelik (Nightly)</string>
-    <string name="settings_ytdlp_update_btn">yt-dlp Güncellemesini Denetle</string>
-    <string name="settings_ytdlp_updating">yt-dlp güncelleniyor…</string>
-    <string name="settings_ytdlp_updated">yt-dlp güncellendi: %1$s</string>
-    <string name="settings_ytdlp_up_to_date">yt-dlp zaten en güncel sürümde.</string>
+    <string name="settings_storage_title">Depolama &amp; Geçici Önbellek</string>
+    <string name="settings_cache_size">Geçici çalışma alanı ve dışa aktarımlar: %1$s</string>
+    <string name="settings_cache_desc">Müzik klasörüne kaydedilen dosyalara dokunmadan eski PCM oturumlarını, paylaşım önbelleğini ve geçici kayıtları siler.</string>
+    <string name="settings_cache_clear_btn">Geçici Önbelleği Temizle</string>
+    <string name="settings_cache_cleared">%1$s geçici önbellek temizlendi</string>
     <string name="settings_about">LibreOpus Hakkında</string>
     <string name="settings_version">Sürüm %1$s (%2$s sürümü)</string>
     <string name="settings_license_title">GNU Genel Kamu Lisansı v3.0</string>
@@ -307,11 +201,7 @@
     <string name="mix_base_gain">Mevcut parça kazancı: %1$+.1f dB</string>
     <string name="mix_overlay_gain">Eklenecek ses kazancı: %1$+.1f dB</string>
 
-    <!-- Downloader History -->
-    <string name="download_history_title">İndirme Geçmişi</string>
-    <string name="download_history_clear">Tümünü Temizle</string>
-    <string name="download_history_refill">URL Kullan</string>
-    <string name="download_history_delete">Geçmişten kaldır</string>
+    <!-- Shared Missing File Error -->
     <string name="download_history_file_missing">Kaydedilen dosyaya artık erişilemiyor</string>
 
     <!-- Live DSP Preview & Fine Selection -->
@@ -356,23 +246,13 @@
     <string name="export_ringtone_assigned">Varsayılan olarak ayarlandı: %1$s</string>
     <string name="export_ringtone_grant_perm">Varsayılan ses atamak için sistem ayarı izni verin</string>
 
-    <!-- İndirici Arama, Ön Etiket Düzenleme & Bölümler -->
-    <string name="download_search_action">Ara</string>
-    <string name="download_searching">Aranıyor…</string>
-    <string name="download_search_results_title">Arama Sonuçları (%1$d)</string>
-    <string name="download_meta_edit_toggle">Etiketleri ve Kapağı İndirmeden Önce Düzenle</string>
-    <string name="download_meta_title_label">Dosya ve Parça Başlığı</string>
-    <string name="download_meta_artist_label">Sanatçı</string>
-    <string name="download_meta_album_label">Albüm</string>
-    <string name="download_meta_embed_cover">Kapak görselini dosyaya göm</string>
-    <string name="download_chapters_count">%1$d Bölüm</string>
-    <string name="download_prop_chapters">Bölümler</string>
     <string name="editor_chapters_label">Bölümler</string>
 
     <!-- AudioLab DSP Efektleri -->
     <string name="effect_compressor">Kompresör</string>
     <string name="effect_reverb">Yankı / Reverb</string>
     <string name="effect_stereo_bass">Stereo &amp; Bas</string>
+    <string name="effect_vocal_remove">Vokal Azaltma</string>
     <string name="comp_preset_gentle">Yumuşak</string>
     <string name="comp_preset_vocal">Vokal</string>
     <string name="comp_preset_podcast">Podcast</string>
@@ -396,4 +276,36 @@
     <string name="stereo_preset_club">Kulüp</string>
     <string name="stereo_width_label">Stereo Genişlik: %1$d%%</string>
     <string name="bass_boost_label">Bas Güçlendirme: +%1$.1f dB</string>
+
+    <!-- Vokal Azaltma / Karaoke -->
+    <string name="vocal_remove_note">Orta-yan (Mid-Side) faz iptaliyle merkez vokali bastırır, alt bas frekansları korur. Stereo parçalarda en iyi sonucu verir.</string>
+    <string name="vocal_preset_light">Hafif</string>
+    <string name="vocal_preset_standard">Dengeli</string>
+    <string name="vocal_preset_strong">Güçlü</string>
+    <string name="vocal_preset_karaoke">Saf Fark (Karaoke)</string>
+    <string name="vocal_strength_label">Bastırma Gücü: %1$d%%</string>
+    <string name="vocal_bass_preserve_hz">Bas Koruma Eşiği: %1$d Hz</string>
+    <string name="vocal_bass_preserve_off">Bas Koruma: Kapalı (tam bant)</string>
+
+    <!-- Stüdyo Ses Kaydedici -->
+    <string name="recorder_active_title">Ses Kaydediliyor</string>
+    <string name="recorder_paused_title">Kayıt Duraklatıldı</string>
+    <string name="recorder_format_hint">48 kHz Mono · Sıkıştırmasız PCM WAV</string>
+    <string name="recorder_pause">Duraklat</string>
+    <string name="recorder_resume">Devam Et</string>
+    <string name="recorder_discard">İptal Et</string>
+    <string name="recorder_stop_and_edit">Bitir ve Düzenleyicide Aç</string>
+    <string name="recorder_permission_denied">Ses kaydı için mikrofon izni gereklidir.</string>
+
+    <!-- Sessizlikten Çoklu Bölme -->
+    <string name="split_silence_title">Sessizlikten Otomatik Böl</string>
+    <string name="split_detect_silence_btn">Bölümleri Algıla (Bölüm İşareti)</string>
+    <string name="split_detect_silence_busy">Sessizlik Taranıyor</string>
+    <string name="split_segment_prefix">Parça</string>
+    <string name="split_silence_found">%1$d bölüm zaman çizelgesine işaretlendi</string>
+    <string name="split_silence_none">Mevcut sessizlik ayarlarıyla ayrı bölüm bulunamadı</string>
+    <string name="split_export_all_busy">Parçalar Kaydediliyor</string>
+    <string name="split_export_all_chapters_btn">Tüm %1$d Bölümü Music\'e Aktar</string>
+    <string name="split_export_all_short">Tümünü Kaydet (%1$d)</string>
+    <string name="split_chapters_exported">%1$d parça Music/LibreOpus klasörüne kaydedildi</string>
 </resources>

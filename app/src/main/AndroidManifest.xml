@@ -2,7 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Strictly offline: zero INTERNET permission, zero trackers, zero storage permissions needed on API 29+ -->
+    <!-- Strictly offline: zero INTERNET permission, zero trackers, runtime mic permission only if user records -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />

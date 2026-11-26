@@ -191,4 +191,25 @@ class LiveDspProcessorTest {
         chain.processInterleaved16(silence, frames)
         assertTrue("Expected clean zero silence after resetState()", silence.all { it == 0.toShort() })
     }
+
+    @Test
+    fun `live chain supports vocal removal on centered stereo mid`() {
+        val sr = 48000
+        val chain = LiveDspChain(sampleRate = sr, channels = 2)
+        chain.updateConfig(
+            LiveDspConfig(
+                vocalRemoveEnabled = true,
+                vocalRemoveStrength = 0.95f,
+                vocalRemoveBassHz = 180f,
+            ),
+        )
+        val frames = 2048
+        val centeredVoice = ShortArray(frames * 2) { idx ->
+            val f = idx / 2
+            (sin(2.0 * PI * 1200.0 * f / sr) * 18000.0).toInt().toShort()
+        }
+        chain.processInterleaved16(centeredVoice, frames)
+        val tailPeak = (1024 until frames).maxOf { f -> abs(centeredVoice[f * 2].toInt()) }
+        assertTrue("Expected centered 1.2kHz voice attenuated (<3000), got $tailPeak", tailPeak < 3000)
+    }
 }

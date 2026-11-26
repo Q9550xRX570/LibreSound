@@ -15,4 +15,147 @@
     <string name="cookies_webview_save">Save Cookies</string>
     <string name="cookies_webview_clear_session">Clear Browser Session</string>
     <string name="cookies_webview_none_captured">No active session cookies found yet. Complete sign-in first.</string>
+
+    <!-- Downloader (full flavor) -->
+    <string name="download_title">Media Downloader</string>
+    <string name="download_subtitle">Download best-quality audio, video, or cover art with full yt-dlp flexibility.</string>
+    <string name="download_url_hint">Paste 1 or more media URLs (one per line)</string>
+    <string name="download_paste">Paste</string>
+    <string name="download_clear">Clear</string>
+    <string name="download_fetch_info">Preview &amp; Formats</string>
+    <string name="download_fetching_info">Fetching media info…</string>
+    <string name="download_audio_format_label">Audio Preference</string>
+    <string name="download_format_auto">Auto Best</string>
+    <string name="download_format_opus">WebM (Opus)</string>
+    <string name="download_format_m4a">M4A (AAC)</string>
+    <string name="download_presets_label">Download Modes</string>
+    <string name="download_preset_best_audio">Best Audio Quality</string>
+    <string name="download_preset_best_audio_desc">Highest-quality native audio stream</string>
+    <string name="download_preset_image_only">Image / Cover Only</string>
+    <string name="download_preset_image_only_desc">Downloads only the thumbnail/artwork image</string>
+    <string name="download_preset_audio_image">Best Audio + Cover Image</string>
+    <string name="download_preset_audio_image_desc">Downloads both audio and cover for immediate editing</string>
+    <string name="download_preset_video_muxed">Video + Audio (MP4 / WebM)</string>
+    <string name="download_preset_video_muxed_desc">Downloads playable video + audio without heavy FFmpeg overhead</string>
+    <string name="download_preset_custom">Custom yt-dlp Command</string>
+    <string name="download_preset_custom_desc">Full CLI control, saved templates, and custom flags</string>
+    <string name="download_custom_args_label">yt-dlp arguments</string>
+    <string name="download_command_preview">Active flags: %1$s</string>
+    <string name="download_customize_command">Customize Flags</string>
+    <string name="download_templates_label">Command Templates</string>
+    <string name="download_save_template">Save Template</string>
+    <string name="download_template_name_hint">Template name (e.g. Podcast Opus)</string>
+    <string name="download_start">Download</string>
+    <string name="download_initializing">Preparing yt-dlp runtime…</string>
+    <string name="download_eta">ETA: %1$ds</string>
+    <string name="download_extract_to_editor">Extract Audio in Editor</string>
+    <string name="download_set_as_cover">Use as Track Cover</string>
+    <string name="download_saved_to">Saved: %1$s</string>
+    <string name="download_saved_subtitles">Subtitles saved (%1$d)</string>
+    <string name="download_logs">Console Output</string>
+
+    <!-- Format & Playlist Picker -->
+    <string name="formats_pick_button">Choose Format (%1$d)</string>
+    <string name="formats_selected_badge">Selected format: #%1$s (tap to change)</string>
+    <string name="formats_picker_title">Available Streams</string>
+    <string name="formats_picker_auto">Automatic Best Quality</string>
+    <string name="formats_tab_audio">Audio</string>
+    <string name="formats_tab_video">Video + Audio</string>
+    <string name="formats_tab_other">Video Only</string>
+    <string name="formats_empty">No streams found in this category.</string>
+    <string name="playlist_count_badge">Playlist • %1$d items</string>
+
+    <!-- Cookies & Network Hardening -->
+    <string name="cookies_title">Cookies (cookies.txt)</string>
+    <string name="cookies_manage">Manage</string>
+    <string name="cookies_none">No cookies loaded (optional)</string>
+    <string name="cookies_active_summary">%1$d cookies active (%2$s)</string>
+    <string name="cookies_loaded_paused">%1$d cookies loaded (paused)</string>
+    <string name="cookies_sheet_subtitle">Use Netscape cookies.txt or browser Cookie-Editor JSON for age-restricted, private, or bot-checked links. Stored privately inside app storage.</string>
+    <string name="cookies_import_file">Import File (.txt / .json)</string>
+    <string name="cookies_paste_label">Paste cookies.txt or JSON</string>
+    <string name="cookies_paste_hint"># Netscape HTTP Cookie File…</string>
+    <string name="cookies_save_validate">Validate &amp; Save</string>
+    <string name="cookies_clear">Clear Cookies</string>
+    <string name="cookies_json_converted">Converted JSON cookies to Netscape format (%1$d cookies).</string>
+    <string name="cookies_signin_webview">Sign in via Browser (Auto cookies.txt)</string>
+    <string name="download_properties_action">Properties</string>
+    <string name="download_properties_title">Media Properties</string>
+    <string name="download_prop_channel">Channel / Artist</string>
+    <string name="download_prop_album">Album</string>
+    <string name="download_prop_year">Year</string>
+    <string name="download_prop_duration">Duration</string>
+    <string name="download_prop_format">Format / Codec</string>
+    <string name="download_prop_size">File Size</string>
+    <string name="download_prop_path">Saved Path</string>
+    <string name="download_prop_source">Source URL</string>
+    <string name="download_advanced_options">Power, Network &amp; Output Options</string>
+    <string name="download_allow_playlist">Allow Playlist Download</string>
+    <string name="download_playlist_items_label">Playlist Items (e.g. 1-5 or 1,3,7)</string>
+    <string name="download_youtube_client_label">YouTube Player Client</string>
+    <string name="download_client_auto">Auto</string>
+    <string name="download_filename_template_label">Filename Template</string>
+    <string name="download_tmpl_title">Title</string>
+    <string name="download_tmpl_uploader">Uploader - Title</string>
+    <string name="download_tmpl_playlist">Index - Title</string>
+    <string name="download_tmpl_id">ID</string>
+    <string name="download_tmpl_custom">Custom</string>
+    <string name="download_custom_template_label" formatted="false">Custom -o template (e.g. %(title).80B.%(ext)s)</string>
+    <string name="download_concurrent_fragments">Concurrent Fragments: %1$d</string>
+    <string name="download_write_subs">Download Subtitles (tr, en)</string>
+    <string name="download_no_check_certs">Ignore SSL Certificate Errors</string>
+    <string name="download_force_ipv4">Force IPv4</string>
+    <string name="download_geo_bypass">Geo-Bypass</string>
+    <string name="download_rate_limit_label">Speed Limit (optional, e.g. 2M or 500K)</string>
+    <string name="download_proxy_label">Proxy URL (optional, e.g. socks5://127.0.0.1:9050)</string>
+    <string name="download_user_agent_label">Custom User-Agent (optional)</string>
+    <string name="download_referer_label">Referer URL (optional)</string>
+    <string name="download_extractor_args_label">Extra Extractor Args (optional)</string>
+
+    <!-- Error Diagnostics -->
+    <string name="ytdlp_err_bot_check">YouTube requested bot/sign-in verification. Import a cookies.txt file from a signed-in browser or switch YouTube Player Client and retry.</string>
+    <string name="ytdlp_err_age">This media is age-restricted. Enable valid browser cookies to download it.</string>
+    <string name="ytdlp_err_auth">Authentication or membership is required for this media. Try adding valid cookies.</string>
+    <string name="ytdlp_err_403">Server returned HTTP 403 Forbidden. Try switching YouTube Player Client, updating yt-dlp, enabling Force IPv4, or adding cookies.</string>
+    <string name="ytdlp_err_ffmpeg">This custom command requires FFmpeg post-processing, which is omitted to keep the app lean. Choose a native stream without -x instead.</string>
+    <string name="ytdlp_err_network">Network or timeout error while connecting. Check your internet connection or try Force IPv4.</string>
+    <string name="ytdlp_err_unsupported">This URL is not supported by the current yt-dlp extractors. Updating yt-dlp may add support.</string>
+    <string name="ytdlp_err_extractor_format">Media extraction or format selection failed on the remote site. Updating yt-dlp or retrying with another YouTube client may resolve it.</string>
+    <string name="ytdlp_err_unavailable">This media is unavailable, removed, or blocked in your region.</string>
+    <string name="ytdlp_err_generic_retry">Download could not complete. Try Retrying, Updating yt-dlp, or inspect Technical Details below.</string>
+    <string name="ytdlp_action_retry">Retry</string>
+    <string name="ytdlp_action_add_cookies">Add Cookies</string>
+    <string name="ytdlp_action_force_ipv4">Enable IPv4</string>
+    <string name="ytdlp_action_update_engine">Update yt-dlp</string>
+    <string name="ytdlp_show_details">Technical Details</string>
+
+    <!-- Settings yt-dlp -->
+    <string name="settings_ytdlp_title">yt-dlp Downloader Engine</string>
+    <string name="settings_ytdlp_version">Installed version: %1$s</string>
+    <string name="settings_ytdlp_bundled">Bundled (youtubedl-android 0.18.1)</string>
+    <string name="settings_ytdlp_channel">Update Channel</string>
+    <string name="settings_ytdlp_stable">Stable</string>
+    <string name="settings_ytdlp_nightly">Nightly</string>
+    <string name="settings_ytdlp_update_btn">Check &amp; Update yt-dlp</string>
+    <string name="settings_ytdlp_updating">Updating yt-dlp…</string>
+    <string name="settings_ytdlp_updated">Updated yt-dlp to %1$s</string>
+    <string name="settings_ytdlp_up_to_date">yt-dlp is already up to date.</string>
+
+    <!-- Downloader History -->
+    <string name="download_history_title">Download History</string>
+    <string name="download_history_clear">Clear All</string>
+    <string name="download_history_refill">Reuse URL</string>
+    <string name="download_history_delete">Remove from history</string>
+
+    <!-- Downloader Search, Metadata Override & Chapters -->
+    <string name="download_search_action">Search</string>
+    <string name="download_searching">Searching…</string>
+    <string name="download_search_results_title">Search Results (%1$d)</string>
+    <string name="download_meta_edit_toggle">Edit Tags &amp; Cover Before Download</string>
+    <string name="download_meta_title_label">File &amp; Track Title</string>
+    <string name="download_meta_artist_label">Artist</string>
+    <string name="download_meta_album_label">Album</string>
+    <string name="download_meta_embed_cover">Embed cover art into file</string>
+    <string name="download_chapters_count">%1$d Chapters</string>
+    <string name="download_prop_chapters">Chapters</string>
 </resources>

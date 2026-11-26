@@ -41,11 +41,9 @@ import androidx.compose.ui.unit.dp
 import com.libreopus.app.BuildConfig
 import com.libreopus.app.R
 import com.libreopus.app.data.AppLanguage
+import com.libreopus.app.data.Formatters
 import com.libreopus.app.data.UserPreferences
-import com.libreopus.app.downloader.YtDlpUpdateChannel
-import com.libreopus.app.downloader.YtDlpUpdateStatus
 import com.libreopus.app.ui.theme.ThemeMode
-import com.libreopus.app.viewmodel.DownloadUiState
 import com.libreopus.audio.api.ExportFormat
 import kotlin.math.roundToInt
 
@@ -59,10 +57,10 @@ fun SettingsScreen(
     onLanguageChange: (AppLanguage) -> Unit,
     onDefaultFormatChange: (ExportFormat) -> Unit,
     onDefaultBitrateChange: (Int) -> Unit,
+    cacheSizeBytes: Long,
+    onClearCache: () -> Unit,
     modifier: Modifier = Modifier,
-    downloadState: DownloadUiState? = null,
-    onUpdateChannelChange: (YtDlpUpdateChannel) -> Unit = {},
-    onCheckYtDlpUpdate: () -> Unit = {},
+    ytDlpSettingsSlot: (@Composable () -> Unit)? = null,
 ) {
     val resources = LocalResources.current
     var showLicenseDialog by remember { mutableStateOf(false) }
@@ -172,81 +170,34 @@ fun SettingsScreen(
             }
         }
 
-        if (BuildConfig.HAS_YTDLP && downloadState != null) {
+        if (BuildConfig.HAS_YTDLP && ytDlpSettingsSlot != null) {
             item {
-                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                ytDlpSettingsSlot()
+            }
+        }
+
+        item {
+            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(stringResource(R.string.settings_storage_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = stringResource(R.string.settings_cache_size, Formatters.formatBytes(cacheSizeBytes)),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_cache_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FilledTonalButton(
+                        onClick = onClearCache,
+                        enabled = cacheSizeBytes > 0L,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(stringResource(R.string.settings_ytdlp_title), style = MaterialTheme.typography.titleMedium)
-                        val verLabel = downloadState.engineStatus.version
-                            ?: downloadState.engineStatus.versionName
-                            ?: stringResource(R.string.settings_ytdlp_bundled)
-                        Text(
-                            text = stringResource(R.string.settings_ytdlp_version, verLabel),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-
-                        Text(stringResource(R.string.settings_ytdlp_channel), style = MaterialTheme.typography.labelLarge)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = downloadState.updateChannel == YtDlpUpdateChannel.STABLE,
-                                onClick = { onUpdateChannelChange(YtDlpUpdateChannel.STABLE) },
-                                enabled = !downloadState.isUpdatingEngine,
-                                label = { Text(stringResource(R.string.settings_ytdlp_stable)) },
-                            )
-                            FilterChip(
-                                selected = downloadState.updateChannel == YtDlpUpdateChannel.NIGHTLY,
-                                onClick = { onUpdateChannelChange(YtDlpUpdateChannel.NIGHTLY) },
-                                enabled = !downloadState.isUpdatingEngine,
-                                label = { Text(stringResource(R.string.settings_ytdlp_nightly)) },
-                            )
-                        }
-
-                        FilledTonalButton(
-                            onClick = onCheckYtDlpUpdate,
-                            enabled = !downloadState.isUpdatingEngine && !downloadState.isRunning,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            if (downloadState.isUpdatingEngine) {
-                                CircularProgressIndicator(
-                                    strokeWidth = 2.dp,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.settings_ytdlp_updating))
-                            } else {
-                                Text(stringResource(R.string.settings_ytdlp_update_btn))
-                            }
-                        }
-
-                        downloadState.engineUpdateOutcome?.let { outcome ->
-                            val msg = when (outcome.status) {
-                                YtDlpUpdateStatus.UPDATED -> stringResource(
-                                    R.string.settings_ytdlp_updated,
-                                    outcome.version ?: outcome.versionName ?: "",
-                                )
-                                YtDlpUpdateStatus.ALREADY_UP_TO_DATE -> stringResource(R.string.settings_ytdlp_up_to_date)
-                                YtDlpUpdateStatus.UNAVAILABLE -> ""
-                            }
-                            if (msg.isNotBlank()) {
-                                Text(
-                                    text = msg,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-
-                        downloadState.engineUpdateError?.let { err ->
-                            Text(
-                                text = err,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
+                        Text(stringResource(R.string.settings_cache_clear_btn))
                     }
                 }
             }

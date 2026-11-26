@@ -12,6 +12,7 @@ import com.libreopus.app.data.MediaStorageHelper
 import com.libreopus.app.data.PreferencesRepository
 import com.libreopus.app.data.RecentFileEntry
 import com.libreopus.app.data.RingtoneAssignOutcome
+import com.libreopus.app.data.StudioHelpers
 import com.libreopus.audio.api.AudioInfo
 import com.libreopus.audio.api.AudioMetadata
 import com.libreopus.audio.api.ChannelMode
@@ -33,6 +34,7 @@ import com.libreopus.dsp.effects.ReverbEchoProcessor
 import com.libreopus.dsp.effects.StereoWidenerProcessor
 import com.libreopus.dsp.effects.TimePitchProcessor
 import com.libreopus.dsp.effects.UtilityProcessors
+import com.libreopus.dsp.effects.VocalRemoveProcessor
 import com.libreopus.dsp.storage.AudioSegment
 import com.libreopus.dsp.storage.DiskPcmStore
 import com.libreopus.dsp.storage.EditTimeline
@@ -568,6 +570,148 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun activeSessionCachePath(): String? = sessionDir?.absolutePath
+
+    fun detectSilenceChapters(thresholdDb: Float = -38f, minSilenceMs: Int = 500) {
+        val st = _state.value
+        val tl = st.timeline ?: return
+        player.pause()
+        activeTaskJob?.cancel()
+        activeTaskJob = viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            _state.update { it.copy(busyLabel = ctx.getString(R.string.split_detect_silence_busy), busyProgress = 0f) }
+            try {
+                val regions = withContext(Dispatchers.Default) {
+                    UtilityProcessors.detectNonSilentRegions(
+                        reader = tl,
+                        thresholdDb = thresholdDb,
+                        minSilenceMs = minSilenceMs,
+                        minSegmentMs = 400,
+                        paddingMs = 60,
+                    ) { p ->
+                        _state.update { it.copy(busyProgress = p) }
+                    }
+                }
+                val prefix = ctx.getString(R.string.split_segment_prefix)
+                val chapters = regions.mapIndexedNotNull { idx, (sFrame, eFrame) ->
+                    val sMs = tl.frameToMs(sFrame).coerceIn(0L, st.durationMs)
+                    val eMs = tl.frameToMs(eFrame).coerceIn(sMs, st.durationMs)
+                    if (eMs - sMs < 200L) null
+                    else MediaChapter(title = "$prefix ${idx + 1}", startMs = sMs, endMs = eMs)
+                }
+                if (chapters.isEmpty()) {
+                    _state.update { it.copy(busyLabel = null, busyProgress = 0f) }
+                    _events.emit(EditorEvent.Message(ctx.getString(R.string.split_silence_none)))
+                } else {
+                    val first = chapters.first()
+                    _state.update {
+                        it.copy(
+                            chapters = chapters,
+                            selectionStartMs = first.startMs,
+                            selectionEndMs = first.endMs,
+                            playheadMs = first.startMs,
+                            busyLabel = null,
+                            busyProgress = 0f,
+                        )
+                    }
+                    _events.emit(EditorEvent.Message(ctx.getString(R.string.split_silence_found, chapters.size)))
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                _state.update { it.copy(busyLabel = null, busyProgress = 0f) }
+                _events.emit(EditorEvent.Message(t.localizedMessage ?: "Silence scan failed"))
+            }
+        }
+    }
+
+    fun exportAllChaptersToMusic(defaultFormat: ExportFormat, defaultBitrateKbps: Int) {
+        val currentSnap = history.current ?: return
+        val st = _state.value
+        val tl = st.timeline ?: return
+        val chapters = st.chapters
+        if (chapters.isEmpty()) return
+
+        player.pause()
+        val effectiveFormat = if (st.isLosslessOpusReady &&
+            (defaultFormat == ExportFormat.OPUS || defaultFormat == ExportFormat.OGG_OPUS)
+        ) {
+            defaultFormat
+        } else if (st.isLosslessOpusReady) {
+            ExportFormat.OPUS
+        } else {
+            defaultFormat
+        }
+
+        val baseName = (st.info?.displayName ?: "libreopus_audio").substringBeforeLast('.')
+        val total = chapters.size
+        activeTaskJob?.cancel()
+        activeTaskJob = viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            _state.update { it.copy(busyLabel = ctx.getString(R.string.split_export_all_busy), busyProgress = 0f) }
+            try {
+                for (idx in chapters.indices) {
+                    val ch = chapters[idx]
+                    val sMs = ch.startMs.coerceIn(0L, st.durationMs)
+                    val eMs = ch.endMs.coerceIn(sMs, st.durationMs)
+                    val sFrame = tl.msToFrame(sMs)
+                    val eFrame = tl.msToFrame(eMs)
+                    if (eFrame <= sFrame) continue
+
+                    val partTl = tl.trim(sFrame, eFrame)
+                    val partLossless = currentSnap.losslessState.trimmed(sMs, eMs)
+                    val partMeta = st.metadata.copy(
+                        title = ch.title.ifBlank { "${baseName}_${idx + 1}" },
+                        trackNumber = "${idx + 1}/$total",
+                    )
+                    val config = ExportConfig(
+                        format = effectiveFormat,
+                        bitrateKbps = defaultBitrateKbps,
+                        metadata = partMeta,
+                        losslessStreamCopy = partLossless.isLosslessEligible,
+                    )
+                    val partState = st.copy(
+                        isLosslessOpusReady = partLossless.isLosslessEligible,
+                        losslessSourceFile = partLossless.sourceOggFile,
+                        losslessStartMs = partLossless.startMs,
+                        losslessEndMs = partLossless.endMs,
+                    )
+                    val partName = StudioHelpers.buildSequentialPartName(
+                        baseName = baseName,
+                        indexZeroBased = idx,
+                        totalCount = total,
+                        extension = config.format.extension,
+                    )
+                    val (uri, stream) = MediaStorageHelper.createAudioExportTarget(
+                        context = ctx,
+                        fileName = partName,
+                        format = config.format,
+                        targetType = ExportTargetType.MUSIC,
+                        title = partMeta.title,
+                    )
+                    stream.buffered().use { out ->
+                        runExportPipeline(
+                            timeline = partTl,
+                            st = partState,
+                            config = config,
+                            outputStream = out,
+                            progressScale = 1f / total.toFloat(),
+                            progressOffset = idx.toFloat() / total.toFloat(),
+                        )
+                    }
+                    MediaStorageHelper.finalizeMusicExportTarget(ctx, uri)
+                }
+                _state.update { it.copy(busyLabel = null, busyProgress = 0f) }
+                _events.emit(EditorEvent.Message(ctx.getString(R.string.split_chapters_exported, total)))
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                _state.update { it.copy(busyLabel = null, busyProgress = 0f) }
+                _events.emit(EditorEvent.Message(t.localizedMessage ?: "Chapter export failed"))
+            }
+        }
+    }
+
     fun silenceSelection() = runTimelineEdit("Silence", losslessTransform = { ls, _, _ -> ls.invalidated() }) { tl, s, e ->
         tl.silenceRange(s, e)
     }
@@ -690,6 +834,13 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         bassBoostDb: Float,
     ) = runDspEffect("Stereo & Bass") { tl, store, s, e, prog ->
         StereoWidenerProcessor.apply(tl, store, s, e, width, bassBoostDb, prog)
+    }
+
+    fun applyVocalRemove(
+        strength: Float,
+        preserveBassHz: Float,
+    ) = runDspEffect("Vocal Remover") { tl, store, s, e, prog ->
+        VocalRemoveProcessor.apply(tl, store, s, e, strength, preserveBassHz, prog)
     }
 
     fun applyChannelOperation(op: ChannelOperation) = runDspEffect("Channels") { tl, store, _, _, prog ->

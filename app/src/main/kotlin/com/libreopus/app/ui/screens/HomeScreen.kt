@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.ContentCut
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.Button
@@ -54,6 +55,7 @@ fun HomeScreen(
     onClearRecents: () -> Unit,
     onOpenConverter: () -> Unit,
     onOpenDownloader: () -> Unit,
+    onRecordAudio: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -132,41 +134,60 @@ fun HomeScreen(
         item {
             Text(stringResource(R.string.home_quick_tools), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (hasDownloader) {
-                    OutlinedCard(
-                        onClick = onOpenDownloader,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (hasDownloader) {
+                        OutlinedCard(
+                            onClick = onOpenDownloader,
+                            modifier = Modifier.weight(1f),
                         ) {
-                            Icon(Icons.Rounded.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Text(stringResource(R.string.home_tool_download), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.home_tool_download_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Icon(Icons.Rounded.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Text(stringResource(R.string.home_tool_download), style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    stringResource(R.string.home_tool_download_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    } else {
+                        OutlinedCard(
+                            onClick = onPickAudio,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Icon(Icons.Rounded.ContentCut, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Text(stringResource(R.string.home_tool_trim_edit), style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    stringResource(R.string.home_tool_trim_edit_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
-                } else {
                     OutlinedCard(
-                        onClick = onPickAudio,
+                        onClick = onOpenConverter,
                         modifier = Modifier.weight(1f),
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Icon(Icons.Rounded.ContentCut, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Text(stringResource(R.string.home_tool_trim_edit), style = MaterialTheme.typography.titleSmall)
+                            Icon(Icons.Rounded.SwapHoriz, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                            Text(stringResource(R.string.home_tool_converter), style = MaterialTheme.typography.titleSmall)
                             Text(
-                                stringResource(R.string.home_tool_trim_edit_desc),
+                                stringResource(R.string.home_tool_converter_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -174,20 +195,28 @@ fun HomeScreen(
                     }
                 }
                 OutlinedCard(
-                    onClick = onOpenConverter,
-                    modifier = Modifier.weight(1f),
+                    onClick = onRecordAudio,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Column(
+                    Row(
                         modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Icon(Icons.Rounded.SwapHoriz, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
-                        Text(stringResource(R.string.home_tool_converter), style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            stringResource(R.string.home_tool_converter_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Icon(
+                            Icons.Rounded.Mic,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(28.dp),
                         )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(stringResource(R.string.home_tool_recorder), style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                stringResource(R.string.home_tool_recorder_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }

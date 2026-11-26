@@ -27,6 +27,9 @@ data class LiveDspConfig(
     val reverbWetMix: Float = 0.28f,
     val stereoWidth: Float = 1f,
     val bassBoostDb: Float = 0f,
+    val vocalRemoveEnabled: Boolean = false,
+    val vocalRemoveStrength: Float = 0.90f,
+    val vocalRemoveBassHz: Float = 180f,
     val bypass: Boolean = false,
 ) {
     val hasAnyEffect: Boolean
@@ -38,7 +41,8 @@ data class LiveDspConfig(
             compEnabled ||
             (reverbEnabled && reverbWetMix > 0.005f) ||
             abs(stereoWidth - 1f) > 0.01f ||
-            bassBoostDb > 0.05f
+            bassBoostDb > 0.05f ||
+            (vocalRemoveEnabled && vocalRemoveStrength > 0.01f)
 }
 
 /**
@@ -63,6 +67,7 @@ class LiveDspChain(
     private val compressorKernel = CompressorKernel(safeSampleRate, safeChannels)
     private val stereoBassKernel = StereoBassKernel(safeSampleRate, safeChannels)
     private val reverbKernel = SchroederReverbKernel(safeSampleRate, safeChannels)
+    private val vocalRemoverKernel = VocalRemoverKernel(safeSampleRate, safeChannels)
 
     // Noise gate envelope state
     private val envAttack = exp((-1.0 / (safeSampleRate * 0.002))).toFloat()
@@ -108,6 +113,13 @@ class LiveDspChain(
             width = next.stereoWidth,
             bassBoostDb = next.bassBoostDb,
         )
+        if (next.vocalRemoveEnabled) {
+            vocalRemoverKernel.configure(
+                strength = next.vocalRemoveStrength,
+                preserveBassHz = next.vocalRemoveBassHz,
+            )
+            if (!config.vocalRemoveEnabled) vocalRemoverKernel.reset()
+        }
         if (next.reverbEnabled && next.reverbWetMix > 0.005f) {
             reverbKernel.configure(
                 delayMs = next.reverbDelayMs,
@@ -125,6 +137,7 @@ class LiveDspChain(
         passFilters.forEach { it.reset() }
         compressorKernel.reset()
         stereoBassKernel.reset()
+        vocalRemoverKernel.reset()
         reverbKernel.reset()
         env = 0f
         gateGain = 1f
@@ -199,6 +212,9 @@ class LiveDspChain(
 
         if (cfg.compEnabled) {
             compressorKernel.processInPlace(floatScratch, frameCount)
+        }
+        if (cfg.vocalRemoveEnabled && cfg.vocalRemoveStrength > 0.01f) {
+            vocalRemoverKernel.processInPlace(floatScratch, frameCount)
         }
         if (abs(cfg.stereoWidth - 1f) > 0.01f || cfg.bassBoostDb > 0.05f) {
             stereoBassKernel.processInPlace(floatScratch, frameCount)

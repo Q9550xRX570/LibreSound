@@ -354,6 +354,42 @@ object MediaStorageHelper {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }
+
+    fun computeTempCacheSizeBytes(cacheDir: File): Long {
+        if (!cacheDir.exists()) return 0L
+        var total = 0L
+        cacheDir.walkTopDown().forEach { f ->
+            if (f.isFile) total += f.length()
+        }
+        return total
+    }
+
+    fun clearTempCache(cacheDir: File, keepPaths: Set<String> = emptySet()): Long {
+        if (!cacheDir.exists()) return 0L
+        val targetDirs = cacheDir.listFiles()?.filter { entry ->
+            entry.name in setOf("sessions", "exports", "recordings", "ytdlp_work") ||
+                entry.name.startsWith("batch_")
+        } ?: emptyList()
+        var freed = 0L
+        for (entry in targetDirs) {
+            if (entry.absolutePath in keepPaths) continue
+            if (entry.isDirectory) {
+                entry.listFiles()?.forEach { child ->
+                    if (child.absolutePath !in keepPaths) {
+                        freed += computeTempCacheSizeBytes(child)
+                        child.deleteRecursively()
+                    }
+                }
+                if (entry.listFiles().isNullOrEmpty()) {
+                    entry.delete()
+                }
+            } else if (entry.isFile) {
+                freed += entry.length()
+                entry.delete()
+            }
+        }
+        return freed
+    }
 }
 
 object Formatters {

@@ -396,3 +396,104 @@ object StereoWidenerProcessor {
         }
     }
 }
+
+enum class VocalRemovePreset(
+    val strength: Float,
+    val preserveBassHz: Float,
+) {
+    LIGHT(strength = 0.65f, preserveBassHz = 160f),
+    STANDARD(strength = 0.90f, preserveBassHz = 180f),
+    STRONG(strength = 1.00f, preserveBassHz = 140f),
+    PURE_DIFF(strength = 1.00f, preserveBassHz = 0f),
+}
+
+/**
+ * Mid-Side center cancellation kernel preserving centered bass below [preserveBassHz]
+ * (kick drums / bass guitar) so karaoke mixes retain low-end punch.
+ */
+internal class VocalRemoverKernel(
+    sampleRate: Double,
+    channels: Int,
+) {
+    private val sr = sampleRate.coerceAtLeast(8000.0)
+    private val ch = channels.coerceIn(1, 2)
+
+    private var strength = 0.90f
+    private var preserveBassHz = 180f
+    private var lastConfigKey = Float.NaN to Float.NaN
+    private var bassPreserveLpf: BiquadFilter? = null
+    private var monoNotch: BiquadFilter? = null
+
+    fun configure(strength: Float, preserveBassHz: Float) {
+        this.strength = strength.coerceIn(0f, 1f)
+        this.preserveBassHz = preserveBassHz.coerceIn(0f, 320f)
+        val key = this.strength to this.preserveBassHz
+        if (key != lastConfigKey) {
+            lastConfigKey = key
+            bassPreserveLpf = if (ch == 2 && this.preserveBassHz > 30f && this.preserveBassHz < sr * 0.45) {
+                FilterAndGateProcessor.createButterworthLowPass(sr, this.preserveBassHz.toDouble()).apply {
+                    ensureChannels(1)
+                }
+            } else {
+                null
+            }
+            monoNotch = if (ch == 1 && this.strength > 0.01f) {
+                EqualizerProcessor.createPeaking(sr, 1200.0, 0.7, -14.0 * this.strength).apply {
+                    ensureChannels(1)
+                }
+            } else {
+                null
+            }
+        }
+    }
+
+    fun reset() {
+        bassPreserveLpf?.reset()
+        monoNotch?.reset()
+    }
+
+    fun processInPlace(interleaved: FloatArray, frameCount: Int) {
+        if (strength <= 0.01f) return
+        if (ch == 1) {
+            val notch = monoNotch ?: return
+            for (f in 0 until frameCount) {
+                interleaved[f] = notch.process(interleaved[f].toDouble(), 0).toFloat()
+            }
+            return
+        }
+
+        val lpf = bassPreserveLpf
+        val st = strength
+        for (f in 0 until frameCount) {
+            val base = f * 2
+            val l = interleaved[base]
+            val r = interleaved[base + 1]
+            val mid = 0.5f * (l + r)
+            val side = 0.5f * (l - r)
+            val lowMid = if (lpf != null) lpf.process(mid.toDouble(), 0).toFloat() else 0f
+            val keptMid = lowMid + (mid - lowMid) * (1f - st)
+            interleaved[base] = keptMid + side
+            interleaved[base + 1] = keptMid - side
+        }
+    }
+}
+
+object VocalRemoveProcessor {
+    suspend fun apply(
+        timeline: EditTimeline,
+        store: DiskPcmStore,
+        startFrame: Long,
+        endFrame: Long,
+        strength: Float = 0.90f,
+        preserveBassHz: Float = 180f,
+        onProgress: (Float) -> Unit = {},
+    ): EditTimeline {
+        if (strength <= 0.01f) return timeline
+        val kernel = VocalRemoverKernel(timeline.sampleRate.toDouble(), timeline.channels).apply {
+            configure(strength, preserveBassHz)
+        }
+        return streamProcessRange(timeline, store, startFrame, endFrame, "vocal_rm", onProgress) { buf, frames, _ ->
+            kernel.processInPlace(buf, frames)
+        }
+    }
+}

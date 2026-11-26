@@ -15,9 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -25,6 +27,8 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -34,6 +38,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -52,6 +57,7 @@ import com.libreopus.audio.api.ChannelMode
 import com.libreopus.audio.api.ExportFormat
 import com.libreopus.audio.api.WavBitDepth
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -75,6 +81,19 @@ fun ConverterScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.size(8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = !state.mergeMode,
+                    onClick = { if (!state.isRunning) viewModel.updateConfig(mergeMode = false) },
+                    label = { Text(stringResource(R.string.converter_mode_batch)) },
+                )
+                FilterChip(
+                    selected = state.mergeMode,
+                    onClick = { if (!state.isRunning) viewModel.updateConfig(mergeMode = true) },
+                    label = { Text(stringResource(R.string.converter_mode_merge)) },
+                )
+            }
         }
 
         item {
@@ -162,6 +181,32 @@ fun ConverterScreen(
                         }
                     }
 
+                    if (state.mergeMode) {
+                        Text(
+                            text = stringResource(R.string.merge_crossfade_label, state.crossfadeMs / 1000f),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        @Suppress("DEPRECATION")
+                        Slider(
+                            value = state.crossfadeMs.toFloat(),
+                            onValueChange = {
+                                if (!state.isRunning) {
+                                    val snapped = ((it / 250f).roundToLong() * 250L).coerceIn(0L, 5000L)
+                                    viewModel.updateConfig(crossfadeMs = snapped)
+                                }
+                            },
+                            valueRange = 0f..5000f,
+                        )
+                        OutlinedTextField(
+                            value = state.mergedOutputName,
+                            onValueChange = { if (!state.isRunning) viewModel.updateConfig(mergedOutputName = it) },
+                            label = { Text(stringResource(R.string.merge_output_name_label)) },
+                            placeholder = { Text(stringResource(R.string.merge_output_name_hint)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -202,28 +247,104 @@ fun ConverterScreen(
         if (state.queue.isNotEmpty()) {
             item {
                 if (state.isRunning) {
-                    OutlinedButton(
-                        onClick = { viewModel.cancelBatch() },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.cancel))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (state.mergeMode) {
+                            LinearProgressIndicator(
+                                progress = { state.mergedProgress.coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { viewModel.cancelBatch() },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.cancel))
+                        }
                     }
                 } else {
+                    val canRun = if (state.mergeMode) state.queue.size >= 2 else true
                     Button(
-                        onClick = { viewModel.startBatch() },
+                        onClick = { viewModel.startAction() },
+                        enabled = canRun,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(stringResource(R.string.converter_start))
+                        Text(
+                            if (state.mergeMode) {
+                                if (state.queue.size < 2) {
+                                    stringResource(R.string.merge_need_two_tracks)
+                                } else {
+                                    stringResource(R.string.merge_start, state.queue.size)
+                                }
+                            } else {
+                                stringResource(R.string.converter_start)
+                            },
+                        )
                     }
                 }
             }
         }
 
-        items(state.queue, key = { it.uri.toString() }) { item ->
+        val mergedUri = state.mergedResultUri
+        val mergedPath = state.mergedResultPath
+        if (state.mergeMode && mergedUri != null && mergedPath != null) {
+            item {
+                ElevatedCard(
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.merge_done_title),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = mergedPath,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { onOpenConvertedUri(mergedUri) }) {
+                                Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.download_open_in_editor))
+                            }
+                            TextButton(onClick = { onShareConvertedUri(mergedUri, state.mergedResultMimeType ?: "audio/*") }) {
+                                Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.export_share))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (state.mergeMode && state.mergedError != null) {
+            item {
+                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = state.mergedError,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(14.dp),
+                    )
+                }
+            }
+        }
+
+        itemsIndexed(state.queue, key = { _, item -> item.uri.toString() }) { idx, item ->
             OutlinedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(bottom = 8.dp)) {
                     ListItem(
-                        headlineContent = { Text(item.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        headlineContent = {
+                            val title = if (state.mergeMode) "${idx + 1}. ${item.displayName}" else item.displayName
+                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        },
                         supportingContent = {
                             val txt = when (item.status) {
                                 QueueItemStatus.PENDING -> stringResource(R.string.converter_status_pending)
@@ -242,8 +363,24 @@ fun ConverterScreen(
                         },
                         trailingContent = {
                             if (!state.isRunning) {
-                                IconButton(onClick = { viewModel.removeItem(item.uri) }) {
-                                    Icon(Icons.Rounded.Close, contentDescription = null)
+                                Row {
+                                    if (state.mergeMode) {
+                                        IconButton(
+                                            onClick = { viewModel.moveItem(idx, -1) },
+                                            enabled = idx > 0,
+                                        ) {
+                                            Icon(Icons.Rounded.ArrowUpward, contentDescription = null)
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.moveItem(idx, 1) },
+                                            enabled = idx < state.queue.lastIndex,
+                                        ) {
+                                            Icon(Icons.Rounded.ArrowDownward, contentDescription = null)
+                                        }
+                                    }
+                                    IconButton(onClick = { viewModel.removeItem(item.uri) }) {
+                                        Icon(Icons.Rounded.Close, contentDescription = null)
+                                    }
                                 }
                             }
                         },
@@ -258,7 +395,7 @@ fun ConverterScreen(
                     }
                     val outUri = item.outputContentUri
                     val outMime = item.outputMimeType ?: "audio/*"
-                    if (item.status == QueueItemStatus.DONE && outUri != null) {
+                    if (!state.mergeMode && item.status == QueueItemStatus.DONE && outUri != null) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

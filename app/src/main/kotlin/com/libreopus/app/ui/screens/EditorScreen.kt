@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Loop
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.SpaceBar
@@ -105,6 +106,7 @@ import com.libreopus.app.ui.sheets.ReverbEchoSheet
 import com.libreopus.app.ui.sheets.SpeedPitchSheet
 import com.libreopus.app.ui.sheets.SplitOptionsSheet
 import com.libreopus.app.ui.sheets.StereoBassSheet
+import com.libreopus.app.ui.sheets.VocalRemoveSheet
 import com.libreopus.app.viewmodel.EditorUiState
 import com.libreopus.app.viewmodel.EditorViewModel
 import com.libreopus.app.viewmodel.TrimMarkerTarget
@@ -114,7 +116,7 @@ import com.libreopus.audio.api.ExportFormat
 import kotlin.math.abs
 
 private enum class ActiveSheet {
-    NONE, GAIN_NORM, FADE, EQ, SPEED_PITCH, FILTER_GATE, COMPRESSOR, REVERB, STEREO_BASS, CHANNELS, METADATA, EXPORT, SPLIT, INSERT_SILENCE
+    NONE, GAIN_NORM, FADE, EQ, SPEED_PITCH, FILTER_GATE, COMPRESSOR, REVERB, STEREO_BASS, VOCAL_REMOVE, CHANNELS, METADATA, EXPORT, SPLIT, INSERT_SILENCE
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -220,11 +222,29 @@ fun EditorScreen(
 
                 if (state.chapters.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "${stringResource(R.string.editor_chapters_label)} (${state.chapters.size})",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.secondary,
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "${stringResource(R.string.editor_chapters_label)} (${state.chapters.size})",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                            TextButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    viewModel.exportAllChaptersToMusic(defaultExportFormat, defaultBitrateKbps)
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.split_export_all_short, state.chapters.size),
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -625,6 +645,9 @@ fun EditorScreen(
                             ToolActionChip(Icons.Rounded.Speaker, stringResource(R.string.effect_stereo_bass)) {
                                 activeSheet = ActiveSheet.STEREO_BASS
                             }
+                            ToolActionChip(Icons.Rounded.RecordVoiceOver, stringResource(R.string.effect_vocal_remove)) {
+                                activeSheet = ActiveSheet.VOCAL_REMOVE
+                            }
                             ToolActionChip(Icons.Rounded.SwapHoriz, stringResource(R.string.effect_reverse)) {
                                 viewModel.reverseSelection()
                             }
@@ -750,6 +773,14 @@ fun EditorScreen(
             onLiveDspChange = { viewModel.updateLiveDspPreview(it) },
             onStopPreview = { viewModel.stopEffectPreview() },
         )
+        ActiveSheet.VOCAL_REMOVE -> VocalRemoveSheet(
+            onDismiss = { activeSheet = ActiveSheet.NONE },
+            onApply = { strength, preserveBassHz -> viewModel.applyVocalRemove(strength, preserveBassHz) },
+            isPlaying = state.isPlaying,
+            onTogglePreview = { viewModel.toggleEffectPreviewPlayback() },
+            onLiveDspChange = { viewModel.updateLiveDspPreview(it) },
+            onStopPreview = { viewModel.stopEffectPreview() },
+        )
         ActiveSheet.CHANNELS -> ChannelSheet(
             onDismiss = { activeSheet = ActiveSheet.NONE },
             onApply = { viewModel.applyChannelOperation(it) },
@@ -784,9 +815,12 @@ fun EditorScreen(
         ActiveSheet.SPLIT -> SplitOptionsSheet(
             playheadMs = state.playheadMs,
             durationMs = state.durationMs,
+            chapterCount = state.chapters.size,
             onKeepLeft = { viewModel.splitKeepLeft() },
             onKeepRight = { viewModel.splitKeepRight() },
             onExportBoth = { viewModel.splitAndExportBothHalves(defaultExportFormat, defaultBitrateKbps) },
+            onDetectSilence = { threshDb, minMs -> viewModel.detectSilenceChapters(threshDb, minMs) },
+            onExportAllChapters = { viewModel.exportAllChaptersToMusic(defaultExportFormat, defaultBitrateKbps) },
             onDismiss = { activeSheet = ActiveSheet.NONE },
         )
         ActiveSheet.INSERT_SILENCE -> InsertSilenceDialog(
